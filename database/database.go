@@ -12,8 +12,7 @@ import (
 // Initializes database or panics.
 //
 //	@return *gorm.DB
-func InitPostgres() *gorm.DB {
-	connStr := "postgresql://" + os.Getenv("POSTGRES_USER") + ":" + os.Getenv("POSTGRES_PASSWORD") + "@" + os.Getenv("POSTGRES_SERVER") + ":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DB")
+func InitPostgres(connStr string) *gorm.DB {
 	postgres, err := gorm.Open(postgres.Open(connStr), &gorm.Config{Logger: logger.Default.LogMode(GetGormLogLevel())})
 	if err != nil {
 		panic(err)
