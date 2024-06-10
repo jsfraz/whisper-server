@@ -1,0 +1,11 @@
+name: whisper-swagger-ui
+services:
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: whisper-swagger-ui
+    restart: always
+    ports:
+      - "8081:8080"
+    environment:
+      - SWAGGER_JSON_URL=http://localhost:8080/api/openapi.json
+      - VALIDATOR_URL=none

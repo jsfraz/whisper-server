@@ -1,0 +1,5 @@
+{
+    "subject": "E-mail address confirmed",
+    "text1": "your e-mail address has been verified and you can now start using your account.",
+    "footer": "If you have any questions, please contact us back at <a href=\"mailto:%s\">this</a> e-mail address."
+}
