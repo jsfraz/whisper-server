@@ -5,12 +5,11 @@ import "errors"
 type Status int
 
 const (
-	UsernameTaken           Status = 452
-	MailTaken               Status = 453
-	VerificationMailNotSend Status = 454
-	VerificationFailed      Status = 455
-	UserNotVerified         Status = 456
-	UserDoesntExist         Status = 457
+	UsernameTaken      Status = 452
+	MailTaken          Status = 453
+	VerificationFailed Status = 454
+	UserNotVerified    Status = 455
+	UserDoesntExist    Status = 456
 
 	BadRequest          Status = 400
 	Unauthorized        Status = 401
@@ -26,8 +25,6 @@ func (status Status) GetMessage() string {
 		message = "Username already taken."
 	case MailTaken:
 		message = "E-mail already taken."
-	case VerificationMailNotSend:
-		message = "Failed to send verification e-mail, account was not created."
 	case VerificationFailed:
 		message = "Account verification failed."
 	case UserNotVerified:

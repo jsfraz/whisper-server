@@ -46,25 +46,6 @@ func RegisterUser(c *gin.Context, register *models.Register) error {
 		return err
 	}
 
-	// TODO send mail
-	/*
-		// send verification mail
-		err = utils.SendVerifyMail(newUser.Mail, newUser.Username, newUser.VerificationCode)
-		// delete user if mail wasn't send
-		if err != nil {
-			// TODO log error
-			status := errors.VerificationMailNotSend
-			c.AbortWithStatus(status.GetCode())
-			err = database.DeleteUserById(newUser.Id)
-			if err != nil {
-				c.AbortWithStatus(errors.InternalServerError.GetCode())
-				// TODO log error
-				return err
-			}
-			return status.GetError()
-		}
-	*/
-
 	return nil
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/routes"
@@ -9,9 +10,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
-
-	"github.com/lib/pq"
 )
 
 var (
@@ -26,6 +24,8 @@ var (
 	// SQL scripts
 	//go:embed sqlScripts/register_trigger.sql
 	registerTrigger string
+	//go:embed sqlScripts/verify_trigger.sql
+	verifyTrigger string
 )
 
 func main() {
@@ -66,46 +66,51 @@ func main() {
 		panic(err)
 	}
 
+	// Verify trigger
+	err = singleton.PostgresDb.Exec(verifyTrigger).Error
+	if err != nil {
+		panic(err)
+	}
+
 	// Listeners in separated goroutines
 
 	// Register trigger
 	go func() {
-		TriggerListener(connStr, "register_channel", func(s string) {
-			// TODO send mail
-			log.Println(s)
+		database.TriggerListener(connStr, "register_channel", func(s string) {
+			// Parse to JSON
+			var userInfo utils.NotifyUserInfo
+			err = json.Unmarshal([]byte(s), &userInfo)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			// Send mail
+			err = utils.SendMail(*utils.NewMailData(verifyMail), userInfo.Mail, userInfo.Username, userInfo.VerificationCode)
+			if err != nil {
+				log.Println(err)
+			}
+		})
+	}()
+
+	// Verify trigger
+	go func() {
+		database.TriggerListener(connStr, "verify_channel", func(s string) {
+			// Parse to JSON
+			var userInfo utils.NotifyUserInfo
+			err = json.Unmarshal([]byte(s), &userInfo)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			// Send mail
+			err = utils.SendMail(*utils.NewMailData(verifiedMail), userInfo.Mail, userInfo.Username, "")
+			if err != nil {
+				log.Println(err)
+			}
 		})
 	}()
 
 	// Channel for blocking exiting main function
 	waitForSignal := make(chan bool)
 	<-waitForSignal
-
-}
-
-// Method for creating listener for specific triggers
-//
-//	@param connStr
-//	@param channel
-//	@param callback
-func TriggerListener(connStr string, channel string, callback func(string)) {
-	// Create listener
-	listener := pq.NewListener(connStr, 10*time.Second, time.Minute, func(event pq.ListenerEventType, err error) {
-		if err != nil {
-			log.Println(err.Error())
-		}
-	})
-	err := listener.Listen(channel)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Listen
-	for {
-		select {
-		case notification := <-listener.Notify:
-			// Change detection
-			callback(notification.Extra)
-		case <-time.After(90 * time.Second):
-			go listener.Ping()
-		}
-	}
 }

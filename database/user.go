@@ -53,7 +53,7 @@ func InsertUser(user models.User) error {
 func VerifyUser(verificationCode string) (*models.User, error) {
 	// Find the user
 	var user models.User
-	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("verification_code = ?", verificationCode).Attrs(models.User{}).First(&user).Error
+	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("verification_code = ? AND is_verified = ?", verificationCode, false).Attrs(models.User{}).First(&user).Error
 	if err != nil {
 		return nil, err
 	}

@@ -19,7 +19,6 @@ func AuthRoute(grp *fizz.RouterGroup) {
 			// Custom errors
 			errors.UsernameTaken,
 			errors.MailTaken,
-			errors.VerificationMailNotSend,
 			// Common errors
 			errors.BadRequest,
 			errors.InternalServerError,
