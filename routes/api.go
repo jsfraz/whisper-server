@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/gin-contrib/cors"
@@ -38,6 +39,11 @@ func NewRouter() (*fizz.Fizz, error) {
 
 	// Base API route
 	grp := fizz.Group("api", "", "")
+
+	// Redirect
+	engine.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "https://github.com/jsfraz/whisper")
+	})
 
 	// OpenAPI spec
 	if os.Getenv("GIN_MODE") != "release" {
