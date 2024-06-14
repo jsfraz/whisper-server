@@ -61,3 +61,17 @@ func VerifyUser(verificationCode string) (*models.User, error) {
 	user.IsVerified = true
 	return &user, utils.GetSingleton().PostgresDb.Save(&user).Error
 }
+
+// Returns user by username.
+//
+//	@param username
+//	@return *models.User
+//	@return error
+func GetUserByUsername(username string) (*models.User, error) {
+	var user models.User
+	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("username = ?", username).Attrs(models.User{}).FirstOrInit(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}

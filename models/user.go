@@ -16,7 +16,7 @@ import (
 )
 
 type User struct {
-	Id           uint64    `json:"id" validate:"required" gorm:"primarykey" example:"64bc048e20f184d623e9314b"`
+	Id           uint64    `json:"id" validate:"required" gorm:"primarykey" example:"1"`
 	Username     string    `json:"username" validate:"required" example:"ex4ample"`
 	Mail         string    `json:"-"`
 	HasImage     bool      `json:"hasImage" validate:"required" example:"true"`
@@ -34,7 +34,7 @@ type User struct {
 	EncryptedPrivateKey string `json:"-"`
 }
 
-// Creatze new user.
+// Returns new user.
 //
 //	@param register
 //	@return *User

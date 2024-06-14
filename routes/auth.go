@@ -32,21 +32,17 @@ func AuthRoute(grp *fizz.RouterGroup) {
 		// handler
 		tonic.Handler(handlers.VerifyUser, http.StatusNoContent))
 
-	/*
-		// Login
-		grp.POST("login",
-			utils.CreateOperationOption("User login.",
-				[]errors.Status{
-					// Custom errors
-					errors.UserNotVerified,
-					// Common errors
-					errors.BadRequest,
-					errors.Unauthorized,
-					errors.InternalServerError,
-				}, false),
-			// handler
-			tonic.Handler(handlers.LoginUser, 200))
+	// Login
+	grp.POST("login",
+		utils.CreateOperationOption("User login.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusInternalServerError,
+			}, false),
+		// handler
+		tonic.Handler(handlers.LoginUser, http.StatusOK))
 
+	/*
 		// Refresh
 		grp.GET("refresh",
 			utils.CreateOperationOption("Refresh access token.",

@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/errors"
 	"jsfraz/whisper-server/models"
+	"jsfraz/whisper-server/utils"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -62,61 +66,51 @@ func VerifyUser(c *gin.Context, verify *models.Verify) error {
 	return nil
 }
 
-/*
-// User login
+// User login.
+//
+//	@param c
+//	@param login
+//	@return *models.AuthResponse
+//	@return error
 func LoginUser(c *gin.Context, login *models.Login) (*models.AuthResponse, error) {
-	// get user from database
-	user, verified, err := database.GetUserLoginDataByUsername(login.Username)
+	// Get user from database
+	user, err := database.GetUserByUsername(login.Username)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			c.AbortWithStatus(errors.Unauthorized.GetCode())
-			// TODO log error
-			return nil, err
+		if err == gorm.ErrRecordNotFound {
+			return nil, c.AbortWithError(http.StatusUnauthorized, err)
 		} else {
-			c.AbortWithStatus(errors.InternalServerError.GetCode())
-			// TODO log error
-			return nil, err
+			return nil, c.AbortWithError(http.StatusInternalServerError, err)
 		}
 	}
-	// check if user is verified
-	if !verified {
-		status := errors.UserNotVerified
-		c.AbortWithStatus(status.GetCode())
-		return nil, status.GetError()
+	// Check if user is verified
+	if !user.IsVerified {
+		return nil, c.AbortWithError(http.StatusInternalServerError, errors.UserNotVerified.Error())
 	}
-	// check hash
+	// Check hash
 	hashBytes, _ := base64.StdEncoding.DecodeString(user.PasswordHash)
 	err = bcrypt.CompareHashAndPassword(hashBytes, []byte(login.Password))
 	if err != nil {
-		// incorrect password
+		// Incorrect password
 		if err == bcrypt.ErrMismatchedHashAndPassword {
-			c.AbortWithStatus(errors.Unauthorized.GetCode())
-			// TODO log error
-			return nil, err
+			return nil, c.AbortWithError(http.StatusUnauthorized, err)
 		} else {
-			// internal error
-			c.AbortWithStatus(errors.InternalServerError.GetCode())
-			// TODO log error
-			return nil, err
+			return nil, c.AbortWithError(http.StatusInternalServerError, err)
 		}
 	}
-	// generate access token
+	// Generate access token
 	accessToken, err := utils.GenerateToken(user.Id, os.Getenv("ACCESS_TOKEN_LIFESPAN"), os.Getenv("ACCESS_TOKEN_SECRET"))
 	if err != nil {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		// TODO log error
-		return nil, err
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// generate refresh token
+	// Generate refresh token
 	refreshToken, err := utils.GenerateToken(user.Id, os.Getenv("REFRESH_TOKEN_LIFESPAN"), os.Getenv("REFRESH_TOKEN_SECRET"))
 	if err != nil {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		// TODO log error
-		return nil, err
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	return models.NewAuth(accessToken, refreshToken, user), nil
+	return models.NewAuth(accessToken, refreshToken, *user), nil
 }
 
+/*
 // Refresh access token
 func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.RefreshResponse, error) {
 	// validate token and get user id
