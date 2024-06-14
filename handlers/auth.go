@@ -4,6 +4,7 @@ import (
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/errors"
 	"jsfraz/whisper-server/models"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,32 +19,25 @@ func RegisterUser(c *gin.Context, register *models.Register) error {
 	// Check if username is taken
 	usernameTaken, _ := database.IsUsernameTaken(register.Username)
 	if usernameTaken {
-		status := errors.UsernameTaken
-		c.AbortWithStatus(status.GetCode())
-		return status.GetError()
+		return c.AbortWithError(http.StatusInternalServerError, errors.UsernameTaken.Error())
 	}
 	// Check if mail is taken
 	mailTaken, err := database.IsMailTaken(register.Mail)
 	if err != nil {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		return err
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if mailTaken {
-		status := errors.MailTaken
-		c.AbortWithStatus(status.GetCode())
-		return status.GetError()
+		return c.AbortWithError(http.StatusInternalServerError, errors.MailTaken.Error())
 	}
 	// Create new user
 	newUser, err := models.NewUser(*register)
 	if err != nil {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		return err
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Insert to database
 	err = database.InsertUser(*newUser)
 	if err != nil {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		return err
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
 	return nil
@@ -58,20 +52,12 @@ func VerifyUser(c *gin.Context, verify *models.Verify) error {
 	// Verify user
 	user, err := database.VerifyUser(verify.Code)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		return err
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// If user is empty
 	if user == nil {
-		status := errors.VerificationFailed
-		c.AbortWithStatus(status.GetCode())
-		return status.GetError()
+		return c.AbortWithError(http.StatusInternalServerError, errors.VerificationFailed.Error())
 	}
-	// TODO send mail
-	/*
-		utils.SendVerifiedMail(user.Mail, user.Username)
-		// TODO log error
-	*/
 
 	return nil
 }

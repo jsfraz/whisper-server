@@ -18,12 +18,12 @@ import (
 func InitPostgres(connStr string) *gorm.DB {
 	postgres, err := gorm.Open(postgres.Open(connStr), &gorm.Config{Logger: logger.Default.LogMode(GetGormLogLevel())})
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	// migrace schémat a tabulky
 	err = postgres.AutoMigrate(&models.User{})
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 	return postgres
 }
@@ -59,7 +59,9 @@ func TriggerListener(connStr string, channel string, callback func(string)) {
 		select {
 		case notification := <-listener.Notify:
 			// Change detection
-			callback(notification.Extra)
+			if notification != nil {
+				callback(notification.Extra)
+			}
 		case <-time.After(90 * time.Second):
 			go listener.Ping()
 		}

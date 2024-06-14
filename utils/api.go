@@ -2,14 +2,14 @@ package utils
 
 import (
 	"fmt"
-	"jsfraz/whisper-server/errors"
+	"net/http"
 
 	"github.com/wI2L/fizz"
 	"github.com/wI2L/fizz/openapi"
 )
 
 // Returns array of Fizz Operation option with summary and error responses
-func CreateOperationOption(summary string, statuses []errors.Status, useSecurity bool) []fizz.OperationOption {
+func CreateOperationOption(summary string, errorStatuses []int, useSecurity bool) []fizz.OperationOption {
 	var option []fizz.OperationOption
 	option = append(option, fizz.Summary(summary)) // append summary
 	if useSecurity {
@@ -17,24 +17,16 @@ func CreateOperationOption(summary string, statuses []errors.Status, useSecurity
 			"bearerAuth": []string{},
 		}))
 	}
-	for i := 0; i < len(statuses); i++ { // append each error with reponse
-		// error message
-		message := ""
-		switch statuses[i] {
-		case errors.BadRequest, errors.Unauthorized, errors.InternalServerError:
-			message = "..."
-		default:
-			message = statuses[i].GetMessage()
-		}
+	for i := 0; i < len(errorStatuses); i++ { // append each error with reponse
 		// create option
 		option = append(option,
 			fizz.Response(
-				fmt.Sprint(statuses[i].GetCode()),
-				statuses[i].GetMessage(),
+				fmt.Sprint(errorStatuses[i]),
+				http.StatusText(errorStatuses[i]),
 				map[string]interface{}{},
 				nil,
 				map[string]interface{}{
-					"error": message}))
+					"error": "..."}))
 	}
 	return option
 }

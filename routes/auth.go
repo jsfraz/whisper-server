@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"jsfraz/whisper-server/errors"
 	"jsfraz/whisper-server/handlers"
 	"jsfraz/whisper-server/utils"
+	"net/http"
 
 	"github.com/loopfz/gadgeto/tonic"
 	"github.com/wI2L/fizz"
@@ -14,30 +14,23 @@ func AuthRoute(grp *fizz.RouterGroup) {
 
 	// Create new account
 	grp.POST("register", utils.CreateOperationOption(
-		"Creates new account and sends verification mail.",
-		[]errors.Status{
-			// Custom errors
-			errors.UsernameTaken,
-			errors.MailTaken,
-			// Common errors
-			errors.BadRequest,
-			errors.InternalServerError,
+		"Creates new account.",
+		[]int{
+			http.StatusBadRequest,
+			http.StatusInternalServerError,
 		}, false),
 		// Handler
-		tonic.Handler(handlers.RegisterUser, 201))
+		tonic.Handler(handlers.RegisterUser, http.StatusCreated))
 
 	// Verify account
 	grp.PATCH("verify",
 		utils.CreateOperationOption("Verifies account.",
-			[]errors.Status{
-				// Custom errors
-				errors.VerificationFailed,
-				// Common errors
-				errors.BadRequest,
-				errors.InternalServerError,
+			[]int{
+				http.StatusBadRequest,
+				http.StatusInternalServerError,
 			}, false),
 		// handler
-		tonic.Handler(handlers.VerifyUser, 204))
+		tonic.Handler(handlers.VerifyUser, http.StatusNoContent))
 
 	/*
 		// Login

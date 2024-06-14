@@ -11,7 +11,7 @@
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Creates new account and sends verification mail.",
+                "summary": "Creates new account.",
                 "operationId": "RegisterUser",
                 "requestBody": {
                     "content": {
@@ -27,7 +27,7 @@
                         "description": "Created"
                     },
                     "400": {
-                        "description": "Bad request.",
+                        "description": "Bad Request",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -40,36 +40,8 @@
                             }
                         }
                     },
-                    "452": {
-                        "description": "Username already taken.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": {}
-                                },
-                                "example": {
-                                    "error": "Username already taken."
-                                }
-                            }
-                        }
-                    },
-                    "453": {
-                        "description": "E-mail already taken.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": {}
-                                },
-                                "example": {
-                                    "error": "E-mail already taken."
-                                }
-                            }
-                        }
-                    },
                     "500": {
-                        "description": "Internal server error.",
+                        "description": "Internal Server Error",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -106,7 +78,7 @@
                         "description": "No Content"
                     },
                     "400": {
-                        "description": "Bad request.",
+                        "description": "Bad Request",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -119,22 +91,8 @@
                             }
                         }
                     },
-                    "454": {
-                        "description": "Account verification failed.",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "additionalProperties": {}
-                                },
-                                "example": {
-                                    "error": "Account verification failed."
-                                }
-                            }
-                        }
-                    },
                     "500": {
-                        "description": "Internal server error.",
+                        "description": "Internal Server Error",
                         "content": {
                             "application/json": {
                                 "schema": {

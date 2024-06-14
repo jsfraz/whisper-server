@@ -3,7 +3,6 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
-	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/routes"
 	"jsfraz/whisper-server/utils"
@@ -29,11 +28,12 @@ var (
 )
 
 func main() {
+	// Log settings
+	log.SetPrefix("whisper-server: ")
+	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
 	// Check ENVs and set singleton values
-
 	utils.CheckEnvs()
-
 	singleton := utils.GetSingleton()
 	singleton.MailTemlplate = mailTemlplate
 	singleton.VerifyMail = *utils.NewMailData(verifyMail)
@@ -54,7 +54,7 @@ func main() {
 	// Start server in separated goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
-			fmt.Println("Error starting the server:", err)
+			log.Panicln(err)
 		}
 	}()
 
@@ -63,13 +63,13 @@ func main() {
 	// Register trigger
 	err = singleton.PostgresDb.Exec(registerTrigger).Error
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 
 	// Verify trigger
 	err = singleton.PostgresDb.Exec(verifyTrigger).Error
 	if err != nil {
-		panic(err)
+		log.Panicln(err)
 	}
 
 	// Listeners in separated goroutines
