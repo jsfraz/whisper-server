@@ -75,3 +75,31 @@ func GetUserByUsername(username string) (*models.User, error) {
 	}
 	return &user, nil
 }
+
+// Check if user exists by ID.
+//
+//	@param userId
+//	@return bool
+//	@return error
+func UserExists(userId uint64) (bool, error) {
+	var count int64
+	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count == 1, nil
+}
+
+// Returns user by ID.
+//
+//	@param userId
+//	@return *models.User
+//	@return error
+func GetUserById(userId uint64) (*models.User, error) {
+	var user models.User
+	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("id = ?", userId).Attrs(models.User{}).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}

@@ -9,7 +9,9 @@ import (
 	"github.com/wI2L/fizz"
 )
 
-// Sets auth route group
+// Sets auth route group.
+//
+//	@param grp
 func AuthRoute(grp *fizz.RouterGroup) {
 
 	// Create new account
@@ -29,7 +31,7 @@ func AuthRoute(grp *fizz.RouterGroup) {
 				http.StatusBadRequest,
 				http.StatusInternalServerError,
 			}, false),
-		// handler
+		// Handler
 		tonic.Handler(handlers.VerifyUser, http.StatusNoContent))
 
 	// Login
@@ -39,20 +41,15 @@ func AuthRoute(grp *fizz.RouterGroup) {
 				http.StatusBadRequest,
 				http.StatusInternalServerError,
 			}, false),
-		// handler
+		// Handler
 		tonic.Handler(handlers.LoginUser, http.StatusOK))
-
-	/*
-		// Refresh
-		grp.GET("refresh",
-			utils.CreateOperationOption("Refresh access token.",
-				[]errors.Status{
-					// Common errors
-					errors.BadRequest,
-					errors.Unauthorized,
-					errors.InternalServerError,
-				}, false),
-			// handler
-			tonic.Handler(handlers.RefreshUserAccessToken, 200))
-	*/
+	// Refresh
+	grp.GET("refresh",
+		utils.CreateOperationOption("Refresh access token.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusInternalServerError,
+			}, false),
+		// Handler
+		tonic.Handler(handlers.RefreshUserAccessToken, 200))
 }

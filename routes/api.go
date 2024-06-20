@@ -13,6 +13,9 @@ import (
 )
 
 // Returns a new router
+//
+//	@return *fizz.Fizz
+//	@return error
 func NewRouter() (*fizz.Fizz, error) {
 	// Gin instance
 	engine := gin.Default()
@@ -57,8 +60,7 @@ func NewRouter() (*fizz.Fizz, error) {
 
 	// Setup other routes
 	AuthRoute(grp.Group("auth", "Authentication", "User authentication."))
-	// TODO fix
-	// UserRoute(grp.Group("user", "Users", "Operations associated with a user account."))
+	UserRoute(grp.Group("user", "Users", "Operations associated with a user account."))
 
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())

@@ -110,35 +110,32 @@ func LoginUser(c *gin.Context, login *models.Login) (*models.AuthResponse, error
 	return models.NewAuth(accessToken, refreshToken, *user), nil
 }
 
-/*
-// Refresh access token
+// Refresh access token.
+//
+//	@param c
+//	@param refresh
+//	@return *models.RefreshResponse
+//	@return error
 func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.RefreshResponse, error) {
-	// validate token and get user id
+	// Validate token and get user id
 	userId, err := utils.TokenValid(refresh.RefreshToken, os.Getenv("REFRESH_TOKEN_SECRET"))
 	if err != nil {
-		c.AbortWithStatus(errors.Unauthorized.GetCode())
-		return nil, err
+		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
-	// check if user exists
+	// Check if user exists
 	exists, err := database.UserExists(userId)
 	if err != nil {
-		c.AbortWithStatus(errors.InternalServerError.GetCode())
-		// TODO log error
-		return nil, err
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if exists {
-		// generate access token
+		// Generate access token
 		accessToken, err := utils.GenerateToken(userId, os.Getenv("ACCESS_TOKEN_LIFESPAN"), os.Getenv("ACCESS_TOKEN_SECRET"))
 		if err != nil {
-			c.AbortWithStatus(errors.InternalServerError.GetCode())
-			// TODO log error
-			return nil, err
+			return nil, c.AbortWithError(http.StatusInternalServerError, err)
 		}
 		return models.NewRefreshResponse(accessToken), nil
 	} else {
-		// unauthorized
-		c.AbortWithStatus(errors.Unauthorized.GetCode())
-		return nil, err
+		// Unauthorized
+		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
 }
-*/
