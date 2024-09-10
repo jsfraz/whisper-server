@@ -2,7 +2,8 @@ package utils
 
 import (
 	"encoding/json"
-	"strings"
+
+	"github.com/aymerick/raymond"
 )
 
 type MailData struct {
@@ -31,12 +32,17 @@ func NewMailData(jsonStr string) *MailData {
 //	@param username
 //	@param text2
 //	@return string
-func (m MailData) ToHtml(template string, username string, text2 string) string {
-	s := template
-	s = strings.Replace(s, "@SUBJECT", m.Subject, 1)
-	s = strings.Replace(s, "@USERNAME", username, 1)
-	s = strings.Replace(s, "@TEXT1", m.Text1, 1)
-	s = strings.Replace(s, "@TEXT2", text2, 1)
-	s = strings.Replace(s, "@FOOTER", m.Footer, 1)
-	return s
+func (m *MailData) ToHtml(template string, username string, text2 string) (*string, error) {
+	content, err := raymond.Render(template,
+		map[string]string{
+			"subject":  m.Subject,
+			"username": username,
+			"text1":    m.Text1,
+			"text2":    text2,
+			"footer":   m.Footer,
+		})
+	if err != nil {
+		return nil, err
+	}
+	return &content, nil
 }

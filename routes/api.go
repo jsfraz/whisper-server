@@ -2,8 +2,8 @@ package routes
 
 import (
 	"fmt"
+	"jsfraz/whisper-server/utils"
 	"net/http"
-	"os"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -49,7 +49,7 @@ func NewRouter() (*fizz.Fizz, error) {
 	})
 
 	// OpenAPI spec
-	if os.Getenv("GIN_MODE") != "release" {
+	if utils.GetSingleton().Config.GinMode != "release" {
 		infos := &openapi.Info{
 			Title:       "Whisper server",
 			Description: "This is Whisper messaging server.",

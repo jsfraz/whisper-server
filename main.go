@@ -3,17 +3,19 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/routes"
 	"jsfraz/whisper-server/utils"
 	"log"
 	"net/http"
-	"os"
 )
+
+const addr = "0.0.0.0:8080"
 
 var (
 	// Mail templates
-	//go:embed mailTemplates/mailTemplate.html
+	//go:embed mailTemplates/mailTemplate.hbs
 	mailTemlplate string
 	//go:embed mailTemplates/verifyMail.json
 	verifyMail string
@@ -29,16 +31,31 @@ var (
 
 func main() {
 	// Log settings
-	log.SetPrefix("whisper-server: ")
+	log.SetPrefix("whisper: ")
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
-	// Check ENVs and set singleton values
-	utils.CheckEnvs()
+	log.Printf(fmt.Sprintf("Starting on %s...", addr))
+
+	// Setup singleton
 	singleton := utils.GetSingleton()
 	singleton.MailTemlplate = mailTemlplate
 	singleton.VerifyMail = *utils.NewMailData(verifyMail)
 	singleton.VerifiedMail = *utils.NewMailData(verifiedMail)
-	connStr := "postgresql://" + os.Getenv("POSTGRES_USER") + ":" + os.Getenv("POSTGRES_PASSWORD") + "@" + os.Getenv("POSTGRES_SERVER") + ":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DB") + "?sslmode=disable"
+
+	// Load config
+	config, err := utils.LoadConfig()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	singleton.Config = *config
+
+	// Setup database
+	connStr := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable",
+		singleton.Config.PostgresUser,
+		singleton.Config.PostgresPassword,
+		singleton.Config.PostgresHost,
+		singleton.Config.PostgresPort,
+		singleton.Config.PostgresDb)
 	singleton.PostgresDb = *database.InitPostgres(connStr)
 
 	// Get router
@@ -48,7 +65,7 @@ func main() {
 	}
 	// Start HTTP server
 	srv := &http.Server{
-		Addr:    "0.0.0.0:8080",
+		Addr:    addr,
 		Handler: router,
 	}
 	// Start server in separated goroutine

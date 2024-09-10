@@ -2,8 +2,8 @@ package database
 
 import (
 	"jsfraz/whisper-server/models"
+	"jsfraz/whisper-server/utils"
 	"log"
-	"os"
 	"time"
 
 	"github.com/lib/pq"
@@ -32,7 +32,7 @@ func InitPostgres(connStr string) *gorm.DB {
 //
 //	@return logger.LogLevel
 func GetGormLogLevel() logger.LogLevel {
-	if os.Getenv("GIN_MODE") == "release" {
+	if utils.GetSingleton().Config.GinMode == "release" {
 		return logger.Error
 	}
 	return logger.Info

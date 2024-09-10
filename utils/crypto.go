@@ -22,7 +22,7 @@ func RandomString(length int) string {
 
 // https://gist.github.com/yingray/57fdc3264b1927ef0f984b533d63abab
 func Aes256Encrypt(input []byte, key []byte, iv []byte) ([]byte, error) {
-	bPlaintext := pkcs5Padding(input, 16, len(input))
+	bPlaintext := pkcs5Padding(input, 16)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func Aes256Encrypt(input []byte, key []byte, iv []byte) ([]byte, error) {
 	return ciphertext, nil
 }
 
-func pkcs5Padding(ciphertext []byte, blockSize int, after int) []byte {
+func pkcs5Padding(ciphertext []byte, blockSize int) []byte {
 	padding := (blockSize - len(ciphertext)%blockSize)
 	padtext := bytes.Repeat([]byte{byte(padding)}, padding)
 	return append(ciphertext, padtext...)
