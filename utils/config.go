@@ -25,12 +25,12 @@ type Config struct {
 	SmtpPassword string `envconfig:"SMTP_PASSWORD" required:"true"`
 
 	// Access token
-	AccessTokenLifespan string `envconfig:"ACCESS_TOKEN_LIFESPAN" required:"true"`
 	AccessTokenSecret   string `envconfig:"ACCESS_TOKEN_SECRET" required:"true"`
+	AccessTokenLifespan int    `envconfig:"ACCESS_TOKEN_LIFESPAN" required:"true"`
 
-	// Access token
-	RefreshTokenLifespan string `envconfig:"REFRESH_TOKEN_LIFESPAN" required:"true"`
+	// Refresh token
 	RefreshTokenSecret   string `envconfig:"REFRESH_TOKEN_SECRET" required:"true"`
+	RefreshTokenLifespan int    `envconfig:"REFRESH_TOKEN_LIFESPAN" required:"true"`
 }
 
 // Loads config from environmental values.

@@ -12,8 +12,8 @@ type Singleton struct {
 	MailTemlplate string
 	VerifyMail    MailData
 	VerifiedMail  MailData
-	PostgresDb    gorm.DB
 	Config        Config
+	PostgresDb    gorm.DB
 }
 
 // Gets Singleton instance
