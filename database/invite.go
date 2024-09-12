@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
+	"log"
 	"time"
 
 	"github.com/aymerick/raymond"
@@ -92,7 +93,7 @@ func SubscribeInvites() {
 				*template,
 				map[string]string{
 					"qrBase64":   *qrBase64,
-					"validUntil": time.Now().Add(time.Duration(ttl) * time.Second).Format("2.1. 2006 15:04"),
+					"validUntil": time.Now().Add(time.Duration(ttl) * time.Second).Format("2.1. 2006 15:04:05"),
 					"footer":     utils.GetMailFooter(),
 				},
 			)
@@ -106,6 +107,7 @@ func SubscribeInvites() {
 				fmt.Println(err)
 				return
 			}
+			log.Printf("Invite sent to %s, admin: %t", inviteData.Mail, inviteData.Admin)
 		},
 	})
 	c.Do(context.Background(), c.B().Subscribe().Channel("newInvite").Build())

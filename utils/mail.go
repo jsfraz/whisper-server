@@ -31,6 +31,9 @@ func SendMail(to string, subject, content string) error {
 	return d.DialAndSend(m)
 }
 
+// Returns mail footer with time sent.
+//
+//	@return string
 func GetMailFooter() string {
-	return fmt.Sprintf("Whisper %s", time.Now().Format("2.1. 2006 15:04"))
+	return fmt.Sprintf("Whisper %s", time.Now().Format("2.1. 2006 15:04:05"))
 }

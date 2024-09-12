@@ -3,29 +3,29 @@ module jsfraz/whisper-server
 go 1.23.1
 
 require (
+	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/aymerick/raymond v2.0.2+incompatible
 	github.com/gin-contrib/cors v1.7.2
 	github.com/gin-gonic/gin v1.10.0
 	github.com/loopfz/gadgeto v0.11.4
 	github.com/wI2L/fizz v0.22.0
+	github.com/yeqown/go-qrcode/v2 v2.2.4
+	github.com/yeqown/go-qrcode/writer/standard v1.2.4
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 )
 
 require (
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/fogleman/gg v1.3.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.7.0 // indirect
-	github.com/jackc/puddle/v2 v2.2.1 // indirect
+	github.com/jackc/pgx/v5 v5.7.1 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/yeqown/go-qrcode/v2 v2.2.4 // indirect
-	github.com/yeqown/go-qrcode/writer/standard v1.2.4 // indirect
 	github.com/yeqown/reedsolomon v1.0.0 // indirect
-	golang.org/x/image v0.10.0 // indirect
+	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
@@ -57,7 +57,7 @@ require (
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/valkey-io/valkey-go v1.0.45
 	golang.org/x/arch v0.10.0 // indirect
-	golang.org/x/crypto v0.27.0
+	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
