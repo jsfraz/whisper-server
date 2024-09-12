@@ -45,6 +45,20 @@ func InsertUser(user models.User) error {
 	return nil
 }
 
+// Check if admin exists.
+//
+//	@return bool
+//	@return error
+func AdminExists() (bool, error) {
+	var count int64
+	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count == 1, nil
+}
+
+/*
 // Verify user.
 //
 //	@param verificationCode
@@ -61,6 +75,7 @@ func VerifyUser(verificationCode string) (*models.User, error) {
 	user.IsVerified = true
 	return &user, utils.GetSingleton().PostgresDb.Save(&user).Error
 }
+*/
 
 // Returns user by username.
 //

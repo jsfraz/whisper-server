@@ -1,19 +1,6 @@
 package handlers
 
-import (
-	"encoding/base64"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/errors"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
-	"net/http"
-	"os"
-
-	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
-)
-
+/*
 // Creates new user.
 //
 //	@param c
@@ -139,3 +126,4 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
 }
+*/

@@ -4,6 +4,7 @@ services:
 
   whisper-server:
     container_name: whisper-server
+    env_file: .env.production
     build:
       context: .
     network_mode: bridge
@@ -17,8 +18,10 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST=${POSTGRES_HOST}
-      - POSTGRES_PORT=${POSTGRES_PORT}
       - POSTGRES_DB=${POSTGRES_DB}
+      - VALKEY_HOST=${VALKEY_HOST}
+      - VALKEY_PASSWORD=${VALKEY_PASSWORD}
+      - ADMIN_MAIL=${ADMIN_MAIL}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_HOST=${SMTP_HOST}
@@ -34,6 +37,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: always
+  
+  valkey:
+    image: valkey/valkey:latest
+    container_name: whisper-valkey
+    restart: always
+    ports:
+      - "6379:6379"
+    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD}"
 
 volumes:
   postgres_data:

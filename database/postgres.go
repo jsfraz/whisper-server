@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"log"
@@ -13,19 +14,43 @@ import (
 )
 
 // Initializes database or panics.
-//
-//	@return *gorm.DB
-func InitPostgres(connStr string) *gorm.DB {
+func InitPostgres() {
+	connStr := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable",
+		utils.GetSingleton().Config.PostgresUser,
+		utils.GetSingleton().Config.PostgresPassword,
+		utils.GetSingleton().Config.PostgresHost,
+		utils.GetSingleton().Config.PostgresPort,
+		utils.GetSingleton().Config.PostgresDb)
 	postgres, err := gorm.Open(postgres.Open(connStr), &gorm.Config{Logger: logger.Default.LogMode(GetGormLogLevel())})
 	if err != nil {
 		log.Panicln(err)
 	}
-	// migrace schémat a tabulky
-	err = postgres.AutoMigrate(&models.User{})
+	// Schema migration
+	err = postgres.AutoMigrate(
+		&models.User{},
+	)
 	if err != nil {
 		log.Panicln(err)
 	}
-	return postgres
+	utils.GetSingleton().PostgresDb = *postgres
+}
+
+// Creates PostgreSQL triggers from SQL script paths. Panics on error.
+//
+//	@param paths
+func CreatePostgresTriggers(paths ...string) {
+	for _, p := range paths {
+		// Read script
+		sql, err := utils.ReadFile(p)
+		if err != nil {
+			log.Panicln(err)
+		}
+		// Register trigger
+		err = utils.GetSingleton().PostgresDb.Exec(*sql).Error
+		if err != nil {
+			log.Panicln(err)
+		}
+	}
 }
 
 // Gets Gorm log level.
@@ -38,7 +63,7 @@ func GetGormLogLevel() logger.LogLevel {
 	return logger.Info
 }
 
-// Method for creating listener for specific triggers
+// Method for creating listener for specific triggers. Panics on error.
 //
 //	@param connStr
 //	@param channel
@@ -52,7 +77,7 @@ func TriggerListener(connStr string, channel string, callback func(string)) {
 	})
 	err := listener.Listen(channel)
 	if err != nil {
-		log.Fatal(err)
+		log.Panicln(err)
 	}
 	// Listen
 	for {

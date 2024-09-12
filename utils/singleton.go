@@ -2,18 +2,19 @@ package utils
 
 // https://dev.to/kittipat1413/understanding-the-singleton-pattern-in-go-5h99
 
-import "gorm.io/gorm"
+import (
+	"github.com/valkey-io/valkey-go"
+	"gorm.io/gorm"
+)
 
 var (
 	instance *Singleton
 )
 
 type Singleton struct {
-	MailTemlplate string
-	VerifyMail    MailData
-	VerifiedMail  MailData
-	Config        Config
-	PostgresDb    gorm.DB
+	Config     Config
+	PostgresDb gorm.DB
+	Valkey     valkey.Client
 }
 
 // Gets Singleton instance

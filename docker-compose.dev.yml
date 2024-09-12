@@ -1,0 +1,27 @@
+name: whisper-server
+
+services:
+  
+  whisper-postgres:
+    image: postgres:alpine
+    container_name: whisper-postgres
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+  
+  valkey:
+    image: valkey/valkey:latest
+    container_name: whisper-valkey
+    restart: always
+    ports:
+      - "${VALKEY_PORT}:6379"
+    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD}"
+
+volumes:
+  postgres_data:
