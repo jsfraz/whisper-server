@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "andrejunges.handlebars",
+        "bierner.markdown-preview-github-styles",
+        "davidanson.vscode-markdownlint",
+        "gruntfuggly.todo-tree",
+        "golang.go",
+        "lijunawk.vscodegocomment",
+        "uniquevision.vscode-plpgsql-lsp",
+        "arjun.swagger-viewer"
+    ]
+}

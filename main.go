@@ -2,113 +2,76 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
+	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/routes"
 	"jsfraz/whisper-server/utils"
 	"log"
 	"net/http"
-	"os"
 )
 
-var (
-	// Mail templates
-	//go:embed mailTemplates/mailTemplate.html
-	mailTemlplate string
-	//go:embed mailTemplates/verifyMail.json
-	verifyMail string
-	//go:embed mailTemplates/verifiedMail.json
-	verifiedMail string
-
-	// SQL scripts
-	//go:embed sqlScripts/register_trigger.sql
-	registerTrigger string
-	//go:embed sqlScripts/verify_trigger.sql
-	verifyTrigger string
-)
+const addr = "0.0.0.0:8080"
 
 func main() {
 	// Log settings
-	log.SetPrefix("whisper-server: ")
+	log.SetPrefix("whisper: ")
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
-	// Check ENVs and set singleton values
-	utils.CheckEnvs()
-	singleton := utils.GetSingleton()
-	singleton.MailTemlplate = mailTemlplate
-	singleton.VerifyMail = *utils.NewMailData(verifyMail)
-	singleton.VerifiedMail = *utils.NewMailData(verifiedMail)
-	connStr := "postgresql://" + os.Getenv("POSTGRES_USER") + ":" + os.Getenv("POSTGRES_PASSWORD") + "@" + os.Getenv("POSTGRES_SERVER") + ":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DB") + "?sslmode=disable"
-	singleton.PostgresDb = *database.InitPostgres(connStr)
+	log.Printf(fmt.Sprintf("Starting on %s...", addr))
 
-	// Get router
+	// Setup singleton
+	singleton := utils.GetSingleton()
+
+	// Load config or panic
+	config, err := utils.LoadConfig()
+	if err != nil {
+		log.Panicln(fmt.Errorf("failed to load config: %v", err))
+	}
+	singleton.Config = *config
+
+	// Setup PostgreSQL
+	database.InitPostgres()
+	// Setup Valkey
+	database.InitValkey()
+
+	// Get router or panic
 	router, err := routes.NewRouter()
 	if err != nil {
-		log.Fatal(err)
+		log.Panicln(err)
 	}
 	// Start HTTP server
 	srv := &http.Server{
-		Addr:    "0.0.0.0:8080",
+		Addr:    addr,
 		Handler: router,
 	}
-	// Start server in separated goroutine
+	// Start server in separated goroutine, panic on error
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
 			log.Panicln(err)
 		}
 	}()
 
-	// Create triggers
-
-	// Register trigger
-	err = singleton.PostgresDb.Exec(registerTrigger).Error
+	// Create PostgreSQL triggers
+	database.CreatePostgresTriggers("./sqlScripts/create_user_trigger.sql")
 	if err != nil {
 		log.Panicln(err)
 	}
 
-	// Verify trigger
-	err = singleton.PostgresDb.Exec(verifyTrigger).Error
+	// Send mail on new invite creation
+	go func() {
+		database.SubscribeNewInvites()
+	}()
+
+	// Send mail on user creation
+	go func() {
+		database.SubscribeNewUsers()
+	}()
+
+	// Create admin invite if admin does not exist
+	err = database.CreateAdminInvite()
 	if err != nil {
 		log.Panicln(err)
 	}
-
-	// Listeners in separated goroutines
-
-	// Register trigger
-	go func() {
-		database.TriggerListener(connStr, "register_channel", func(s string) {
-			// Parse to JSON
-			var userInfo utils.NotifyUserInfo
-			err = json.Unmarshal([]byte(s), &userInfo)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			// Send mail
-			err = utils.SendMail(*utils.NewMailData(verifyMail), userInfo.Mail, userInfo.Username, userInfo.VerificationCode)
-			if err != nil {
-				log.Println(err)
-			}
-		})
-	}()
-
-	// Verify trigger
-	go func() {
-		database.TriggerListener(connStr, "verify_channel", func(s string) {
-			// Parse to JSON
-			var userInfo utils.NotifyUserInfo
-			err = json.Unmarshal([]byte(s), &userInfo)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			// Send mail
-			err = utils.SendMail(*utils.NewMailData(verifiedMail), userInfo.Mail, userInfo.Username, "")
-			if err != nil {
-				log.Println(err)
-			}
-		})
-	}()
 
 	// Channel for blocking exiting main function
 	waitForSignal := make(chan bool)

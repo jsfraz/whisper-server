@@ -2,8 +2,8 @@ package routes
 
 import (
 	"fmt"
+	"jsfraz/whisper-server/utils"
 	"net/http"
-	"os"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -49,17 +49,33 @@ func NewRouter() (*fizz.Fizz, error) {
 	})
 
 	// OpenAPI spec
-	if os.Getenv("GIN_MODE") != "release" {
+	if utils.GetSingleton().Config.GinMode != "release" {
+		// Servers
+		fizz.Generator().SetServers([]*openapi.Server{
+			{
+				Description: "localhost - debug",
+				URL:         "http://localhost:8080",
+			},
+		})
+		// TODO more info
 		infos := &openapi.Info{
 			Title:       "Whisper server",
-			Description: "This is Whisper messaging server.",
+			Description: "Secure private self-hosted end-to-end encryption messaging server.",
 			Version:     "1.0.0",
+			// TODO license
+			Contact: &openapi.Contact{
+				Name:  "Josef Ráž",
+				URL:   "josefraz.cz",
+				Email: "razj@josefraz.cz",
+			},
+			// TODO ToS
+			// TODO XLogo
 		}
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
 
 	// Setup other routes
-	AuthRoute(grp.Group("auth", "Authentication", "User authentication."))
+	// AuthRoute(grp.Group("auth", "Authentication", "User authentication."))
 	UserRoute(grp.Group("user", "Users", "Operations associated with a user account."))
 
 	if len(fizz.Errors()) != 0 {
