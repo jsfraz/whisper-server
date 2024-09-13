@@ -65,7 +65,7 @@ func NewRouter() (*fizz.Fizz, error) {
 			// TODO license
 			Contact: &openapi.Contact{
 				Name:  "Josef Ráž",
-				URL:   "josefraz.cz",
+				URL:   "https://josefraz.cz",
 				Email: "razj@josefraz.cz",
 			},
 			// TODO ToS
@@ -76,7 +76,7 @@ func NewRouter() (*fizz.Fizz, error) {
 
 	// Setup other routes
 	// AuthRoute(grp.Group("auth", "Authentication", "User authentication."))
-	UserRoute(grp.Group("user", "Users", "Operations associated with a user account."))
+	UserRoute(grp.Group("user", "User", "Operations associated with a user account."))
 
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())
