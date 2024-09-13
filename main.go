@@ -51,70 +51,27 @@ func main() {
 		}
 	}()
 
-	// Subscribe to invite creation
-	go func() {
-		database.SubscribeInvites()
-	}()
-
-	// Create admin invite if admin does not exist
-	err = database.SendAdminInvite()
+	// Create PostgreSQL triggers
+	database.CreatePostgresTriggers("./sqlScripts/create_user_trigger.sql")
 	if err != nil {
 		log.Panicln(err)
 	}
 
-	/*
-			// Create triggers
+	// Send mail on new invite creation
+	go func() {
+		database.SubscribeNewInvites()
+	}()
 
-			// Register trigger
-			err = singleton.PostgresDb.Exec(registerTrigger).Error
-			if err != nil {
-				log.Panicln(err)
-			}
+	// Send mail on user creation
+	go func() {
+		database.SubscribeNewUsers()
+	}()
 
-			// Verify trigger
-			err = singleton.PostgresDb.Exec(verifyTrigger).Error
-			if err != nil {
-				log.Panicln(err)
-			}
-
-		// Listeners in separated goroutines
-
-		// Register trigger
-		go func() {
-			database.TriggerListener(connStr, "register_channel", func(s string) {
-				// Parse to JSON
-				var userInfo utils.NotifyUserInfo
-				err = json.Unmarshal([]byte(s), &userInfo)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				// Send mail
-				err = utils.SendMail(*utils.NewMailData(verifyMail), userInfo.Mail, userInfo.Username, userInfo.VerificationCode)
-				if err != nil {
-					log.Println(err)
-				}
-			})
-		}()
-
-		// Verify trigger
-		go func() {
-			database.TriggerListener(connStr, "verify_channel", func(s string) {
-				// Parse to JSON
-				var userInfo utils.NotifyUserInfo
-				err = json.Unmarshal([]byte(s), &userInfo)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				// Send mail
-				err = utils.SendMail(*utils.NewMailData(verifiedMail), userInfo.Mail, userInfo.Username, "")
-				if err != nil {
-					log.Println(err)
-				}
-			})
-		}()
-	*/
+	// Create admin invite if admin does not exist
+	err = database.CreateAdminInvite()
+	if err != nil {
+		log.Panicln(err)
+	}
 
 	// Channel for blocking exiting main function
 	waitForSignal := make(chan bool)

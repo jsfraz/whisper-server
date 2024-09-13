@@ -60,7 +60,7 @@ func NewRouter() (*fizz.Fizz, error) {
 		// TODO more info
 		infos := &openapi.Info{
 			Title:       "Whisper server",
-			Description: "This is Whisper messaging server.",
+			Description: "Secure private self-hosted end-to-end encryption messaging server.",
 			Version:     "1.0.0",
 			// TODO license
 			Contact: &openapi.Contact{

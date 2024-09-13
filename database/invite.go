@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"errors"
-	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"log"
@@ -37,7 +36,7 @@ func PushInvite(code string, invite models.InviteData, ttl int) error {
 }
 
 // Subscribe for new invites and send mail.
-func SubscribeInvites() {
+func SubscribeNewInvites() {
 	c, cancel := utils.GetSingleton().Valkey.Dedicate()
 	defer cancel()
 	wait := c.SetPubSubHooks(valkey.PubSubHooks{
@@ -47,13 +46,13 @@ func SubscribeInvites() {
 			result, err := client.Do(context.Background(), client.B().Get().Key(m.Message).Build()).AsBytes()
 			// Return error except if is Valkey error
 			if err != nil && !errors.As(err, &valkeyErr) {
-				fmt.Println(err)
+				log.Println(err)
 				return
 			}
 			// Get inviteData from JSON
 			inviteData, err := models.InviteDataFromJson(result)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				return
 			}
 			// Mail variables
@@ -64,14 +63,14 @@ func SubscribeInvites() {
 			if inviteData.Admin {
 				template, err = utils.ReadFile("./mailTemplates/registerAdmin.hbs")
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 					return
 				}
 				subject = "Admin registration"
 			} else {
 				template, err = utils.ReadFile("./mailTemplates/registerInvite.hbs")
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 					return
 				}
 				subject = "Registration invite"
@@ -79,12 +78,12 @@ func SubscribeInvites() {
 			// Generate QR code
 			inviteJsonBytes, err := models.NewInvite(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				return
 			}
 			qrBase64, err := utils.GetQrBytesFromJson(string(inviteJsonBytes))
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				return
 			}
 			// Render template
@@ -97,13 +96,13 @@ func SubscribeInvites() {
 				},
 			)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				return
 			}
 			// Send mail
 			err = utils.SendMail(inviteData.Mail, subject, content)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 				return
 			}
 			log.Printf("Invite sent to %s, admin: %t", inviteData.Mail, inviteData.Admin)
@@ -178,7 +177,7 @@ func AdminInviteExists() (bool, error) {
 // Create admin invite if admin does not exist
 //
 //	@return error
-func SendAdminInvite() error {
+func CreateAdminInvite() error {
 	// Check if admin account exists
 	adminExists, err := AdminExists()
 	if err != nil {
