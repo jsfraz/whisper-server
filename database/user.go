@@ -5,12 +5,12 @@ import (
 	"jsfraz/whisper-server/utils"
 )
 
-// Check if username is taken.
+// Check if user exists by username.
 //
 //	@param username
 //	@return bool
 //	@return error
-func IsUsernameTaken(username string) (bool, error) {
+func UserExistsByUsername(username string) (bool, error) {
 	var count int64
 	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
 	if err != nil {
@@ -19,6 +19,7 @@ func IsUsernameTaken(username string) (bool, error) {
 	return count == 1, nil
 }
 
+/*
 // Check if mail is taken.
 //
 //	@param mail
@@ -32,17 +33,27 @@ func IsMailTaken(mail string) (bool, error) {
 	}
 	return count == 1, nil
 }
+*/
 
-// Insert user to database.
+// Insert user to database and delete invite code.
 //
 //	@param user
+//	@param inviteCode
 //	@return error
-func InsertUser(user models.User) error {
-	err := utils.GetSingleton().PostgresDb.Create(&user).Error
+func InsertUser(user models.User, inviteCode string) error {
+	tx := utils.GetSingleton().PostgresDb.Begin()
+	err := tx.Create(&user).Error
 	if err != nil {
+		tx.Rollback()
 		return err
 	}
-	return nil
+	// Delete code from Valekey
+	err = DeleteInviteDataByCode(inviteCode)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit().Error
 }
 
 // Check if admin exists.
@@ -75,7 +86,6 @@ func VerifyUser(verificationCode string) (*models.User, error) {
 	user.IsVerified = true
 	return &user, utils.GetSingleton().PostgresDb.Save(&user).Error
 }
-*/
 
 // Returns user by username.
 //
@@ -90,13 +100,14 @@ func GetUserByUsername(username string) (*models.User, error) {
 	}
 	return &user, nil
 }
+*/
 
 // Check if user exists by ID.
 //
 //	@param userId
 //	@return bool
 //	@return error
-func UserExists(userId uint64) (bool, error) {
+func UserExistsById(userId uint64) (bool, error) {
 	var count int64
 	err := utils.GetSingleton().PostgresDb.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
@@ -105,6 +116,7 @@ func UserExists(userId uint64) (bool, error) {
 	return count == 1, nil
 }
 
+/*
 // Returns user by ID.
 //
 //	@param userId
@@ -118,3 +130,4 @@ func GetUserById(userId uint64) (*models.User, error) {
 	}
 	return &user, nil
 }
+*/

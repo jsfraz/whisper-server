@@ -9,15 +9,25 @@ import (
 )
 
 // Returns array of Fizz Operation option with summary and error responses
-func CreateOperationOption(summary string, errorStatuses []int, useSecurity bool) []fizz.OperationOption {
+//
+//	@param summary
+//	@param description
+//	@param errorStatuses
+//	@param useSecurity
+//	@return []fizz.OperationOption
+func CreateOperationOption(summary string, description string, errorStatuses []int, useSecurity bool) []fizz.OperationOption {
 	var option []fizz.OperationOption
-	option = append(option, fizz.Summary(summary)) // append summary
+	option = append(option, fizz.Summary(summary)) // Append summary
+	// Append description
+	if description != "" {
+		option = append(option, fizz.Description(description))
+	}
 	if useSecurity {
 		option = append(option, fizz.Security(&openapi.SecurityRequirement{
 			"bearerAuth": []string{},
 		}))
 	}
-	for i := 0; i < len(errorStatuses); i++ { // append each error with reponse
+	for i := 0; i < len(errorStatuses); i++ { // Append each error with reponse
 		// create option
 		option = append(option,
 			fizz.Response(

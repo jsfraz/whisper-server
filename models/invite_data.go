@@ -1,21 +1,27 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type InviteData struct {
-	Mail  string `json:"mail"`
-	Admin bool   `json:"admin"`
+	Mail       string    `json:"mail"`
+	Admin      bool      `json:"admin"`
+	ValidUntil time.Time `json:"validUntil"`
 }
 
 // Return new InviteData.
 //
 //	@param mail
 //	@param admin
+//	@param validUntil
 //	@return *InviteData
-func NewInviteData(mail string, admin bool) *InviteData {
+func NewInviteData(mail string, admin bool, validUntil time.Time) *InviteData {
 	i := new(InviteData)
 	i.Mail = mail
 	i.Admin = admin
+	i.ValidUntil = validUntil
 	return i
 }
 

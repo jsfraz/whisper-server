@@ -24,15 +24,20 @@ type User struct {
 	Admin bool `json:"admin" validate:"required" example:"false"`
 }
 
-// Returns new user.
+// Return new user.
 //
-//	@param register
+//	@param username
+//	@param mail
+//	@param publicKey
+//	@param admin
 //	@return *User
-//	@return error
-func NewUser(register Register, admin bool) (*User, error) {
+func NewUser(username string, mail string, publicKey string, admin bool) *User {
 	u := new(User)
-	u.Username = register.Username
-	u.Mail = register.Mail
+	u.Username = username
+	u.Mail = mail
+	u.PublicKey = publicKey
+	u.Admin = admin
+	return u
 	/*
 		u.HasImage = false
 
@@ -96,8 +101,4 @@ func NewUser(register Register, admin bool) (*User, error) {
 
 			u.CreatedUtc = time.Now().UTC()
 	*/
-	u.PublicKey = register.PublicKey
-	u.Admin = admin
-
-	return u, nil
 }

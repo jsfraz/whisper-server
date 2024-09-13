@@ -23,7 +23,7 @@ func Auth(c *gin.Context) {
 		c.AbortWithError(http.StatusUnauthorized, err)
 	}
 	// Check if user exists
-	exists, err := database.UserExists(userId)
+	exists, err := database.UserExistsById(userId)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, err)
 	}

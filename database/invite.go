@@ -13,6 +13,8 @@ import (
 	"github.com/valkey-io/valkey-go"
 )
 
+var valkeyErr *valkey.ValkeyError
+
 // Push new invite record to Valkey and send notification message to newInvite channel.
 //
 //	@param code
@@ -43,7 +45,7 @@ func SubscribeInvites() {
 			// Get invite from Valkey
 			client := utils.GetSingleton().Valkey
 			result, err := client.Do(context.Background(), client.B().Get().Key(m.Message).Build()).AsBytes()
-			var valkeyErr *valkey.ValkeyError
+			// Return error except if is Valkey error
 			if err != nil && !errors.As(err, &valkeyErr) {
 				fmt.Println(err)
 				return
@@ -56,7 +58,6 @@ func SubscribeInvites() {
 			}
 			// Mail variables
 			var template *string
-			var ttl int
 			var content string
 			var subject string
 			// Load template and set variables
@@ -66,7 +67,6 @@ func SubscribeInvites() {
 					fmt.Println(err)
 					return
 				}
-				ttl = utils.GetSingleton().Config.AdminInviteTtl
 				subject = "Admin registration"
 			} else {
 				template, err = utils.ReadFile("./mailTemplates/registerInvite.hbs")
@@ -74,11 +74,10 @@ func SubscribeInvites() {
 					fmt.Println(err)
 					return
 				}
-				ttl = utils.GetSingleton().Config.InviteTtl
 				subject = "Registration invite"
 			}
 			// Generate QR code
-			inviteJsonBytes, err := models.NewInvite(utils.GetSingleton().Config.ServerUrl, m.Message).MarshalBinary()
+			inviteJsonBytes, err := models.NewInvite(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -93,7 +92,7 @@ func SubscribeInvites() {
 				*template,
 				map[string]string{
 					"qrBase64":   *qrBase64,
-					"validUntil": time.Now().Add(time.Duration(ttl) * time.Second).Format("2.1. 2006 15:04:05"),
+					"validUntil": inviteData.ValidUntil.Format("2.1. 2006 15:04:05"),
 					"footer":     utils.GetMailFooter(),
 				},
 			)
@@ -112,4 +111,91 @@ func SubscribeInvites() {
 	})
 	c.Do(context.Background(), c.B().Subscribe().Channel("newInvite").Build())
 	<-wait
+}
+
+// Return invite by code from Valkey.
+//
+//	@param code
+//	@return bool
+//	@return []byte
+//	@return error
+func GetInviteDataByCode(code string) (bool, []byte, error) {
+	client := utils.GetSingleton().Valkey
+	result, err := client.Do(context.Background(), client.B().Get().Key(code).Build()).AsBytes()
+	// Return error except if is Valkey error
+	if err != nil && !errors.As(err, &valkeyErr) {
+		return false, []byte{}, err
+	}
+	// Return result
+	if result != nil {
+		return true, result, nil
+	}
+	return false, []byte{}, nil
+}
+
+// Delete invite by code.
+//
+//	@param code
+//	@return error
+func DeleteInviteDataByCode(code string) error {
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Del().Key(code).Build()).Error()
+}
+
+// Check if admin invite exists
+//
+//	@return bool
+//	@return error
+func AdminInviteExists() (bool, error) {
+	client := utils.GetSingleton().Valkey
+	// Get all keys
+	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
+	if err != nil {
+		return false, err
+	}
+	// Cycle trough keys
+	for _, k := range keys {
+		inviteDataBytes, err := client.Do(context.Background(), client.B().Get().Key(k).Build()).AsBytes()
+		if err != nil && !errors.As(err, &valkeyErr) {
+			log.Println(err)
+			continue
+		}
+		if inviteDataBytes != nil {
+			// Unmarshall invite data
+			inviteData, err := models.InviteDataFromJson(inviteDataBytes)
+			if err != nil {
+				return false, err
+			}
+			// Check if invite is for admin
+			if inviteData.Admin {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// Create admin invite if admin does not exist
+//
+//	@return error
+func SendAdminInvite() error {
+	// Check if admin account exists
+	adminExists, err := AdminExists()
+	if err != nil {
+		return err
+	}
+	// Check if admin invite exists
+	adminInviteExists, err := AdminInviteExists()
+	if err != nil {
+		return err
+	}
+	// Send admin invite
+	if !adminExists && !adminInviteExists {
+		ttl := utils.GetSingleton().Config.AdminInviteTtl
+		err = PushInvite(utils.RandomASCIIString(64), *models.NewInviteData(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

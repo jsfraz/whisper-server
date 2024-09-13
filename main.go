@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"fmt"
 	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/routes"
 	"jsfraz/whisper-server/utils"
 	"log"
@@ -52,22 +51,15 @@ func main() {
 		}
 	}()
 
-	// Subscribe invite creation
+	// Subscribe to invite creation
 	go func() {
 		database.SubscribeInvites()
 	}()
 
-	// Create admin account
-	adminExists, err := database.AdminExists()
+	// Create admin invite if admin does not exist
+	err = database.SendAdminInvite()
 	if err != nil {
 		log.Panicln(err)
-	}
-	// Check if code with admin = true exists
-	if !adminExists {
-		err = database.PushInvite(utils.RandomString(64), *models.NewInviteData(singleton.Config.AdminMail, true), singleton.Config.AdminInviteTtl)
-		if err != nil {
-			log.Panicln(err)
-		}
 	}
 
 	/*
