@@ -34,35 +34,36 @@ func WhoAmI(c *gin.Context) (*models.User, error) {
 //	@param c
 //	@param request
 //	@return error
-func CreateUser(c *gin.Context, request *models.CreateUser) error {
+func CreateUser(c *gin.Context, request *models.CreateUser) (*models.User, error) {
 	exists, inviteDataBytes, err := database.GetInviteDataByCode(request.InviteCode)
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Check if invite exists
 	if !exists {
-		return c.AbortWithError(http.StatusUnauthorized, errors.New("invite does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("invite does not exist"))
 	}
 	// Unmarshall invite data
 	inviteData, err := models.InviteDataFromJson(inviteDataBytes)
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Check if username is taken
 	taken, err := database.UserExistsByUsername(request.Username)
 	if taken {
-		return c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
+		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
 	}
 	// Validate public key (add newlines to start/end)
 	publicKey := strings.Replace(strings.Replace(request.PublicKey, "-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n", 1), "-----END PUBLIC KEY-----", "\n-----END PUBLIC KEY-----", 1)
 	_, err = utils.LoadRsaPublicKey([]byte(publicKey))
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Create user
-	err = database.InsertUser(*models.NewUser(request.Username, inviteData.Mail, publicKey, inviteData.Admin), request.InviteCode)
+	newUser := models.NewUser(request.Username, inviteData.Mail, publicKey, inviteData.Admin)
+	err = database.InsertUser(*newUser, request.InviteCode)
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	return nil
+	return newUser, nil
 }

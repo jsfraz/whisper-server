@@ -1,9 +1,11 @@
 package models
 
 type User struct {
-	Id       uint64 `json:"id" validate:"required" gorm:"primarykey" example:"1"`
-	Username string `json:"username" validate:"required" example:"ex4ample"`
-	Mail     string `json:"-"`
+	Id        uint64 `json:"id" validate:"required" gorm:"primarykey" example:"1"`
+	Username  string `json:"username" validate:"required" example:"ex4ample"`
+	Mail      string `json:"mail" validate:"required,email" example:"user@example.com"`
+	PublicKey string `json:"publicKey" validate:"required" example:"RSA_PUBLIC_KEY_PEM"`
+	Admin     bool   `json:"admin" validate:"required" example:"false"`
 	/*
 			HasImage     bool      `json:"hasImage" validate:"required" example:"true"`
 		PasswordHash string    `json:"-"`
@@ -13,7 +15,6 @@ type User struct {
 		VerificationCode string `json:"-"`
 	*/
 	// RSA public key
-	PublicKey string `json:"publicKey" validate:"required" example:"RSA_PUBLIC_KEY_PEM"`
 	/*
 		// To recover account when password is lost, encrypted (AES) by PBKDF2 derivation from account password
 		EncryptedMasterKey string `json:"-"`
@@ -21,7 +22,6 @@ type User struct {
 		// RSA private key encrypted (AES) by master key
 		EncryptedPrivateKey string `json:"-"`
 	*/
-	Admin bool `json:"admin" validate:"required" example:"false"`
 }
 
 // Return new user.

@@ -3,7 +3,6 @@ package routes
 import (
 	"fmt"
 	"jsfraz/whisper-server/utils"
-	"net/http"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -42,11 +41,6 @@ func NewRouter() (*fizz.Fizz, error) {
 
 	// Base API route
 	grp := fizz.Group("api", "", "")
-
-	// Redirect
-	engine.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "https://github.com/jsfraz/whisper")
-	})
 
 	// OpenAPI spec
 	if utils.GetSingleton().Config.GinMode != "release" {
