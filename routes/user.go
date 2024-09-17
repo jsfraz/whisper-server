@@ -42,6 +42,6 @@ func UserRoute(grp *fizz.RouterGroup) {
 			},
 			false),
 		// Handler
-		tonic.Handler(handlers.CreateUser, http.StatusNoContent),
+		tonic.Handler(handlers.CreateUser, http.StatusOK),
 	)
 }
