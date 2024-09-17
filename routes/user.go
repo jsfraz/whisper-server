@@ -33,7 +33,7 @@ func UserRoute(grp *fizz.RouterGroup) {
 	grp.POST("",
 		utils.CreateOperationOption(
 			"Create user",
-			"**Public key _MUST_ be passed without the newline characters.**",
+			"",
 			[]int{
 				http.StatusBadRequest,
 				http.StatusUnauthorized,
