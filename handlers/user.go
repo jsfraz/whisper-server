@@ -61,7 +61,7 @@ func CreateUser(c *gin.Context, request *models.CreateUser) (*models.User, error
 	}
 	// Create user
 	newUser := models.NewUser(request.Username, inviteData.Mail, publicKey, inviteData.Admin)
-	err = database.InsertUser(*newUser, request.InviteCode)
+	err = database.InsertUser(newUser, request.InviteCode)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}

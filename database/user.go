@@ -28,7 +28,7 @@ func UserExistsByUsername(username string) (bool, error) {
 //	@param user
 //	@param inviteCode
 //	@return error
-func InsertUser(user models.User, inviteCode string) error {
+func InsertUser(user *models.User, inviteCode string) error {
 	tx := utils.GetSingleton().Postgres.Begin()
 	err := tx.Create(&user).Error
 	if err != nil {
