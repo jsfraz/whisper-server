@@ -55,7 +55,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
-	github.com/valkey-io/valkey-go v1.0.45
+	github.com/valkey-io/valkey-go v1.0.46
 	golang.org/x/arch v0.10.0 // indirect
 	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/net v0.29.0 // indirect
