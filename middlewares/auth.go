@@ -1,10 +1,10 @@
 package middlewares
 
 import (
+	"errors"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/utils"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,19 +17,25 @@ import (
 //	@param c Gin context
 func Auth(c *gin.Context) {
 	// Get access token from context and check it
-	userId, err := utils.TokenValid(utils.ExtractTokenFromContext(c), os.Getenv("ACCESS_TOKEN_SECRET"))
+	userId, err := utils.TokenValid(utils.ExtractTokenFromContext(c), utils.GetSingleton().Config.AccessTokenSecret)
 	// Invalid token
 	if err != nil {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		c.Error(err)
+		return
 	}
 	// Check if user exists
 	exists, err := database.UserExistsById(userId)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		c.Error(err)
+		return
 	}
 	// User does not exist.
 	if !exists {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		c.Error(errors.New("user does not exist"))
+		return
 	}
 	// Token is valid, set it to context and continue
 	c.Set("userId", userId)

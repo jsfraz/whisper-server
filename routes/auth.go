@@ -1,52 +1,56 @@
 package routes
 
 import (
+	"jsfraz/whisper-server/handlers"
+	"jsfraz/whisper-server/utils"
+	"net/http"
+
+	"github.com/loopfz/gadgeto/tonic"
 	"github.com/wI2L/fizz"
 )
 
 // Sets auth route group.
 //
 //	@param grp
-func AuthRoute(grp *fizz.RouterGroup) {
+func AuthRoute(g *fizz.RouterGroup) {
 
-	/*
-		// Create new account
-		grp.POST("register", utils.CreateOperationOption(
-			"Creates new account.",
+	grp := g.Group("auth", "Authentication", "User Authentication and registration.")
+
+	// Register user
+	grp.POST("register",
+		utils.CreateOperationOption(
+			"Register new user",
+			"",
 			[]int{
 				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusConflict,
+				http.StatusInternalServerError,
+			},
+			false),
+		tonic.Handler(handlers.CreateUser, http.StatusOK),
+	)
+
+	// Auth
+	grp.POST("",
+		utils.CreateOperationOption(
+			"User auth",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
 				http.StatusInternalServerError,
 			}, false),
-			// Handler
-			tonic.Handler(handlers.RegisterUser, http.StatusCreated))
+		tonic.Handler(handlers.AuthUser, http.StatusOK))
 
-		// Verify account
-		grp.PATCH("verify",
-			utils.CreateOperationOption("Verifies account.",
-				[]int{
-					http.StatusBadRequest,
-					http.StatusInternalServerError,
-				}, false),
-			// Handler
-			tonic.Handler(handlers.VerifyUser, http.StatusNoContent))
-
-		// Login
-		grp.POST("login",
-			utils.CreateOperationOption("User login.",
-				[]int{
-					http.StatusBadRequest,
-					http.StatusInternalServerError,
-				}, false),
-			// Handler
-			tonic.Handler(handlers.LoginUser, http.StatusOK))
-		// Refresh
-		grp.GET("refresh",
-			utils.CreateOperationOption("Refresh access token.",
-				[]int{
-					http.StatusBadRequest,
-					http.StatusInternalServerError,
-				}, false),
-			// Handler
-			tonic.Handler(handlers.RefreshUserAccessToken, 200))
-	*/
+	// Refresh
+	grp.POST("refresh",
+		utils.CreateOperationOption("Refresh access token.",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			}, false),
+		tonic.Handler(handlers.RefreshUserAccessToken, http.StatusOK))
 }

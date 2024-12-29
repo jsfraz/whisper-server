@@ -4,9 +4,8 @@ import (
 	"errors"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
 	"net/http"
-	"strings"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,41 +28,43 @@ func WhoAmI(c *gin.Context) (*models.User, error) {
 }
 */
 
-// Create user.
+// Get all users except the user.
+//
+//	@param c
+//	@return *models.User
+//	@return error
+func GetAllUsers(c *gin.Context) (*[]models.User, error) {
+	userId, _ := c.Get("userId")
+	users, err := database.GetAllUsersExceptUser(userId.(uint64))
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return users, nil
+}
+
+// Delete users by ID.
 //
 //	@param c
 //	@param request
 //	@return error
-func CreateUser(c *gin.Context, request *models.CreateUser) (*models.User, error) {
-	exists, inviteDataBytes, err := database.GetInviteDataByCode(request.InviteCode)
+func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
+	userId, _ := c.Get("userId")
+	// Check if user is admin
+	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+		c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Check if invite exists
-	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("invite does not exist"))
+	if !admin {
+		c.AbortWithError(http.StatusUnauthorized, err)
 	}
-	// Unmarshall invite data
-	inviteData, err := models.InviteDataFromJson(inviteDataBytes)
+	// Check if user is deleting self
+	if slices.Contains(request.Ids, userId.(uint64)) {
+		return c.AbortWithError(http.StatusInternalServerError, errors.New("cannot delete self"))
+	}
+	// Delete
+	err = database.DeleteUsersById(request.Ids)
 	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Check if username is taken
-	taken, err := database.UserExistsByUsername(request.Username)
-	if taken {
-		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
-	}
-	// Validate public key (add newlines to start/end)
-	publicKey := strings.Replace(strings.Replace(request.PublicKey, "-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n", 1), "-----END PUBLIC KEY-----", "\n-----END PUBLIC KEY-----", 1)
-	_, err = utils.LoadRsaPublicKey([]byte(publicKey))
-	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	// Create user
-	newUser := models.NewUser(request.Username, inviteData.Mail, publicKey, inviteData.Admin)
-	err = database.InsertUser(newUser, request.InviteCode)
-	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	return newUser, nil
+	return nil
 }

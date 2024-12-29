@@ -57,6 +57,7 @@ func AdminExists() (bool, error) {
 	return count == 1, nil
 }
 
+/*
 // Returns user by username.
 //
 //	@param username
@@ -70,6 +71,7 @@ func GetUserByUsername(username string) (*models.User, error) {
 	}
 	return &user, nil
 }
+*/
 
 // Check if user exists by ID.
 //
@@ -99,7 +101,7 @@ func GetUserById(userId uint64) (*models.User, error) {
 	return &user, nil
 }
 
-// // Subscribe for new users and send mail.
+// Subscribe for new users and send mail.
 func SubscribeNewUsers() {
 	PostgresTriggerListener(utils.GetSingleton().GetPostgresConnStr(), "create_user_channel", func(s string) {
 		// Get user
@@ -130,4 +132,54 @@ func SubscribeNewUsers() {
 			return
 		}
 	})
+}
+
+// Get all users except the user.
+//
+//	@param userId
+//	@return *[]models.User
+//	@return error
+func GetAllUsersExceptUser(userId uint64) (*[]models.User, error) {
+	var users []models.User = []models.User{}
+	err := utils.GetSingleton().Postgres.Model(&models.User{}).Find(&users).Where("id != ?", userId).Error
+	if err != nil {
+		return nil, err
+	}
+	return &users, nil
+}
+
+// Delete user by ID.
+//
+//	@param userId
+//	@return error
+func DeleteUsersById(userId []uint64) error {
+	return utils.GetSingleton().Postgres.Where("id IN ?", userId).Delete(&models.User{}).Error
+}
+
+// Checks if user with given ID is admin.
+//
+//	@param userId
+//	@return bool
+//	@return error
+func IsAdmin(userId uint64) (bool, error) {
+	var isAdmin bool
+	err := utils.GetSingleton().Postgres.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
+	if err != nil {
+		return false, err
+	}
+	return isAdmin, nil
+}
+
+// Get user public key by ID.
+//
+//	@param userId
+//	@return string
+//	@return error
+func GetUserPublicKey(userId uint64) (string, error) {
+	var publicKey string
+	err := utils.GetSingleton().Postgres.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
+	if err != nil {
+		return "", err
+	}
+	return publicKey, nil
 }

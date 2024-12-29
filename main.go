@@ -17,7 +17,7 @@ func main() {
 	log.SetPrefix("whisper: ")
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
-	log.Printf(fmt.Sprintf("Starting on %s...", addr))
+	log.Printf("starting on %s...", addr)
 
 	// Setup singleton
 	singleton := utils.GetSingleton()

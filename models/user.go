@@ -7,7 +7,7 @@ type User struct {
 	PublicKey string `json:"publicKey" validate:"required" example:"RSA_PUBLIC_KEY_PEM"`
 	Admin     bool   `json:"admin" validate:"required" example:"false"`
 	/*
-			HasImage     bool      `json:"hasImage" validate:"required" example:"true"`
+		HasImage     bool      `json:"hasImage" validate:"required" example:"true"`
 		PasswordHash string    `json:"-"`
 		IsVerified   bool      `json:"-"`
 		CreatedUtc   time.Time `json:"-"`

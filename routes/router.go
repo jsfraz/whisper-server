@@ -11,7 +11,7 @@ import (
 	"github.com/wI2L/fizz/openapi"
 )
 
-// Returns a new router
+// Returns a new API router.
 //
 //	@return *fizz.Fizz
 //	@return error
@@ -69,8 +69,8 @@ func NewRouter() (*fizz.Fizz, error) {
 	}
 
 	// Setup other routes
-	// AuthRoute(grp.Group("auth", "Authentication", "User authentication."))
-	UserRoute(grp.Group("user", "User", "Operations associated with a user account."))
+	AuthRoute(grp)
+	UserRoute(grp)
 
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())

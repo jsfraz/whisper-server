@@ -1,103 +1,98 @@
 package handlers
 
-/*
-// Creates new user.
+import (
+	"errors"
+	"jsfraz/whisper-server/database"
+	"jsfraz/whisper-server/models"
+	"jsfraz/whisper-server/utils"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// Create user.
 //
 //	@param c
-//	@param register
+//	@param request
 //	@return error
-func RegisterUser(c *gin.Context, register *models.Register) error {
+func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) {
+	exists, inviteDataBytes, err := database.GetInviteDataByCode(request.InviteCode)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Check if invite exists
+	if !exists {
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("invite does not exist"))
+	}
+	// Unmarshall invite data
+	inviteData, err := models.InviteDataFromJson(inviteDataBytes)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	// Check if username is taken
-	usernameTaken, _ := database.IsUsernameTaken(register.Username)
-	if usernameTaken {
-		return c.AbortWithError(http.StatusInternalServerError, errors.UsernameTaken.Error())
+	taken, err := database.UserExistsByUsername(request.Username)
+	if taken {
+		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
 	}
-	// Check if mail is taken
-	mailTaken, err := database.IsMailTaken(register.Mail)
+	// Validate public key (add newlines to start/end)
+	publicKey := strings.Replace(strings.Replace(request.PublicKey, "-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n", 1), "-----END PUBLIC KEY-----", "\n-----END PUBLIC KEY-----", 1)
+	_, err = utils.LoadRsaPublicKey([]byte(publicKey))
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	if mailTaken {
-		return c.AbortWithError(http.StatusInternalServerError, errors.MailTaken.Error())
-	}
-	// Create new user
-	newUser, err := models.NewUser(*register)
+	// Create user
+	newUser := models.NewUser(request.Username, inviteData.Mail, publicKey, inviteData.Admin)
+	err = database.InsertUser(newUser, request.InviteCode)
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Insert to database
-	err = database.InsertUser(*newUser)
-	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
-	}
-
-	return nil
+	return newUser, nil
 }
 
-// Verifies user account.
+// User auth.
 //
 //	@param c
-//	@param verify
+//	@param request
 //	@return error
-func VerifyUser(c *gin.Context, verify *models.Verify) error {
-	// Verify user
-	user, err := database.VerifyUser(verify.Code)
-	if err != nil && err != gorm.ErrRecordNotFound {
-		return c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	// If user is empty
-	if user == nil {
-		return c.AbortWithError(http.StatusInternalServerError, errors.VerificationFailed.Error())
-	}
-
-	return nil
-}
-
-// User login.
-//
-//	@param c
-//	@param login
-//	@return *models.AuthResponse
-//	@return error
-func LoginUser(c *gin.Context, login *models.Login) (*models.AuthResponse, error) {
-	// Get user from database
-	user, err := database.GetUserByUsername(login.Username)
+func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error) {
+	// Check if user exists
+	exists, err := database.UserExistsById(request.UserId)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, c.AbortWithError(http.StatusUnauthorized, err)
-		} else {
-			return nil, c.AbortWithError(http.StatusInternalServerError, err)
-		}
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Check if user is verified
-	if !user.IsVerified {
-		return nil, c.AbortWithError(http.StatusInternalServerError, errors.UserNotVerified.Error())
+	// User does not exist
+	if !exists {
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
 	}
-	// Check hash
-	hashBytes, _ := base64.StdEncoding.DecodeString(user.PasswordHash)
-	err = bcrypt.CompareHashAndPassword(hashBytes, []byte(login.Password))
+	// Get user public key
+	publicKeyPem, err := database.GetUserPublicKey(request.UserId)
 	if err != nil {
-		// Incorrect password
-		if err == bcrypt.ErrMismatchedHashAndPassword {
-			return nil, c.AbortWithError(http.StatusUnauthorized, err)
-		} else {
-			return nil, c.AbortWithError(http.StatusInternalServerError, err)
-		}
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	publicKey, err := utils.LoadRsaPublicKey([]byte(publicKeyPem))
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Verify signature
+	err = utils.VerifyRSASignature(publicKey, request.Nonce, request.SignedNonce)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
 	// Generate access token
-	accessToken, err := utils.GenerateToken(user.Id, os.Getenv("ACCESS_TOKEN_LIFESPAN"), os.Getenv("ACCESS_TOKEN_SECRET"))
+	accessToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Generate refresh token
-	refreshToken, err := utils.GenerateToken(user.Id, os.Getenv("REFRESH_TOKEN_LIFESPAN"), os.Getenv("REFRESH_TOKEN_SECRET"))
+	refreshToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.RefreshTokenLifespan, utils.GetSingleton().Config.RefreshTokenSecret)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	return models.NewAuth(accessToken, refreshToken, *user), nil
+	return models.NewAuth(accessToken, refreshToken), nil
 }
 
-// Refresh access token.
+// Refresh user access token.
 //
 //	@param c
 //	@param refresh
@@ -105,25 +100,23 @@ func LoginUser(c *gin.Context, login *models.Login) (*models.AuthResponse, error
 //	@return error
 func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.RefreshResponse, error) {
 	// Validate token and get user id
-	userId, err := utils.TokenValid(refresh.RefreshToken, os.Getenv("REFRESH_TOKEN_SECRET"))
+	userId, err := utils.TokenValid(refresh.RefreshToken, utils.GetSingleton().Config.RefreshTokenSecret)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
 	// Check if user exists
-	exists, err := database.UserExists(userId)
+	exists, err := database.UserExistsById(userId)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	if exists {
-		// Generate access token
-		accessToken, err := utils.GenerateToken(userId, os.Getenv("ACCESS_TOKEN_LIFESPAN"), os.Getenv("ACCESS_TOKEN_SECRET"))
-		if err != nil {
-			return nil, c.AbortWithError(http.StatusInternalServerError, err)
-		}
-		return models.NewRefreshResponse(accessToken), nil
-	} else {
-		// Unauthorized
-		return nil, c.AbortWithError(http.StatusUnauthorized, err)
+	// User does not exist
+	if !exists {
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
 	}
+	// Generate access token
+	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return models.NewRefreshResponse(accessToken), nil
 }
-*/

@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -15,9 +14,7 @@ import (
 //	@param id
 //	@return string
 //	@return error
-func GenerateToken(id uint64, lifespanStr string, secret string) (string, error) {
-	// Token lifespan
-	lifespan, _ := strconv.Atoi(lifespanStr)
+func GenerateToken(id uint64, lifespan int, secret string) (string, error) {
 	// Payload
 	now := time.Now()
 	claims := jwt.MapClaims{}

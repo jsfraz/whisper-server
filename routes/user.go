@@ -2,6 +2,7 @@ package routes
 
 import (
 	"jsfraz/whisper-server/handlers"
+	"jsfraz/whisper-server/middlewares"
 	"jsfraz/whisper-server/utils"
 	"net/http"
 
@@ -12,10 +13,10 @@ import (
 // Sets user route group.
 //
 //	@param grp
-func UserRoute(grp *fizz.RouterGroup) {
+func UserRoute(g *fizz.RouterGroup) {
 
-	// Use auth middleware
-	// grp.Use(middlewares.Auth)
+	grp := g.Group("user", "User", "Operations associated with a user account.")
+	grp.Use(middlewares.Auth)
 
 	/*
 		// Who am I
@@ -29,19 +30,31 @@ func UserRoute(grp *fizz.RouterGroup) {
 			tonic.Handler(handlers.WhoAmI, 200))
 	*/
 
-	// Create user
-	grp.POST("",
+	// Get all users
+	grp.GET("all",
 		utils.CreateOperationOption(
-			"Create user",
+			"Get all users except the user",
 			"",
 			[]int{
 				http.StatusBadRequest,
 				http.StatusUnauthorized,
-				http.StatusConflict,
 				http.StatusInternalServerError,
 			},
-			false),
-		// Handler
-		tonic.Handler(handlers.CreateUser, http.StatusOK),
+			true),
+		tonic.Handler(handlers.GetAllUsers, http.StatusOK),
+	)
+
+	// Delete users
+	grp.PATCH("",
+		utils.CreateOperationOption(
+			"Delete users",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.DeleteUsers, http.StatusOK),
 	)
 }
