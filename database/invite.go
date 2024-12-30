@@ -205,9 +205,24 @@ func CreateAdminInvite() error {
 //	@return error
 func GetAllInvites() (*[]models.Invite, error) {
 	var invites []models.Invite = []models.Invite{}
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Find(&invites).Error
+	client := utils.GetSingleton().Valkey
+	// Get all keys
+	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
 	if err != nil {
 		return nil, err
+	}
+	// Get all invites as JSON
+	invitesJson, err := client.Do(context.Background(), client.B().Mget().Key(keys...).Build()).AsStrSlice()
+	if err != nil {
+		return nil, err
+	}
+	// Unmarshall JSON to Invite
+	for _, i := range invitesJson {
+		invite, err := models.InviteFromJson([]byte(i))
+		if err != nil {
+			return nil, err
+		}
+		invites = append(invites, *invite)
 	}
 	return &invites, nil
 }
