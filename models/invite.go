@@ -6,21 +6,21 @@ import (
 )
 
 type Invite struct {
-	Url        string    `json:"url"`
-	Code       string    `json:"code"`
-	ValidUntil time.Time `json:"validUntil"`
+	Mail       string    `json:"mail" validate:"required"`
+	Admin      bool      `json:"admin" validate:"required"`
+	ValidUntil time.Time `json:"validUntil" validate:"required"`
 }
 
-// Return new Invite
+// Return new Invite.
 //
-//	@param url
-//	@param code
+//	@param mail
+//	@param admin
 //	@param validUntil
-//	@return *Invite
-func NewInvite(url string, code string, validUntil time.Time) *Invite {
+//	@return *InviteData
+func NewInvite(mail string, admin bool, validUntil time.Time) *Invite {
 	i := new(Invite)
-	i.Url = url
-	i.Code = code
+	i.Mail = mail
+	i.Admin = admin
 	i.ValidUntil = validUntil
 	return i
 }
@@ -32,4 +32,18 @@ func NewInvite(url string, code string, validUntil time.Time) *Invite {
 //	@return error
 func (i Invite) MarshalBinary() ([]byte, error) {
 	return json.Marshal(i)
+}
+
+// Return Invite from JSON bytes.
+//
+//	@param jsonBytes
+//	@return *InviteData
+//	@return error
+func InviteFromJson(jsonBytes []byte) (*Invite, error) {
+	var i Invite
+	err := json.Unmarshal(jsonBytes, &i)
+	if err != nil {
+		return nil, err
+	}
+	return &i, nil
 }

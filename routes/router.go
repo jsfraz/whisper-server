@@ -71,6 +71,7 @@ func NewRouter() (*fizz.Fizz, error) {
 	// Setup other routes
 	AuthRoute(grp)
 	UserRoute(grp)
+	InviteRoute(grp)
 
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())

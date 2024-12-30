@@ -20,7 +20,7 @@ var valkeyErr *valkey.ValkeyError
 //	@param invite
 //	@param ttl
 //	@return error
-func PushInvite(code string, invite models.InviteData, ttl int) error {
+func PushInvite(code string, invite models.Invite, ttl int) error {
 	// Marshall JSON
 	i, err := invite.MarshalBinary()
 	if err != nil {
@@ -50,7 +50,7 @@ func SubscribeNewInvites() {
 				return
 			}
 			// Get inviteData from JSON
-			inviteData, err := models.InviteDataFromJson(result)
+			inviteData, err := models.InviteFromJson(result)
 			if err != nil {
 				log.Println(err)
 				return
@@ -76,7 +76,7 @@ func SubscribeNewInvites() {
 				subject = "Registration invite"
 			}
 			// Generate QR code
-			inviteJsonBytes, err := models.NewInvite(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
+			inviteJsonBytes, err := models.NewInviteData(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
 			if err != nil {
 				log.Println(err)
 				return
@@ -161,7 +161,7 @@ func AdminInviteExists() (bool, error) {
 		}
 		if inviteDataBytes != nil {
 			// Unmarshall invite data
-			inviteData, err := models.InviteDataFromJson(inviteDataBytes)
+			inviteData, err := models.InviteFromJson(inviteDataBytes)
 			if err != nil {
 				return false, err
 			}
@@ -191,10 +191,23 @@ func CreateAdminInvite() error {
 	// Send admin invite
 	if !adminExists && !adminInviteExists {
 		ttl := utils.GetSingleton().Config.AdminInviteTtl
-		err = PushInvite(utils.RandomASCIIString(64), *models.NewInviteData(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
+		err = PushInvite(utils.RandomASCIIString(64), *models.NewInvite(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Get all invites
+//
+//	@return *[]models.Invite
+//	@return error
+func GetAllInvites() (*[]models.Invite, error) {
+	var invites []models.Invite = []models.Invite{}
+	err := utils.GetSingleton().Postgres.Model(&models.User{}).Find(&invites).Error
+	if err != nil {
+		return nil, err
+	}
+	return &invites, nil
 }

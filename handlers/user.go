@@ -35,6 +35,15 @@ func WhoAmI(c *gin.Context) (*models.User, error) {
 //	@return error
 func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 	userId, _ := c.Get("userId")
+	// Check if user is admin
+	admin, err := database.IsAdmin(userId.(uint64))
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if !admin {
+		c.AbortWithError(http.StatusUnauthorized, err)
+	}
+	// Get users
 	users, err := database.GetAllUsersExceptUser(userId.(uint64))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)

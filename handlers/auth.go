@@ -26,7 +26,7 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("invite does not exist"))
 	}
 	// Unmarshall invite data
-	inviteData, err := models.InviteDataFromJson(inviteDataBytes)
+	inviteData, err := models.InviteFromJson(inviteDataBytes)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
