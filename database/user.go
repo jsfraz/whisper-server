@@ -94,7 +94,7 @@ func UserExistsById(userId uint64) (bool, error) {
 //	@return error
 func GetUserById(userId uint64) (*models.User, error) {
 	var user models.User
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Attrs(models.User{}).First(&user).Error
+	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Attrs(models.User{}).First(&user).Error // TODO model necessary?
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func SubscribeNewUsers() {
 //	@return error
 func GetAllUsersExceptUser(userId uint64) (*[]models.User, error) {
 	var users []models.User = []models.User{}
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Find(&users).Where("id != ?", userId).Error
+	err := utils.GetSingleton().Postgres.Where("id != ?", userId).Find(&users).Error
 	if err != nil {
 		return nil, err
 	}
