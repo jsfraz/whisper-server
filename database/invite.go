@@ -211,6 +211,10 @@ func GetAllInvites() (*[]models.Invite, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Zero keys
+	if len(keys) == 0 {
+		return &invites, nil
+	}
 	// Get all invites as JSON
 	invitesJson, err := client.Do(context.Background(), client.B().Mget().Key(keys...).Build()).AsStrSlice()
 	if err != nil {
