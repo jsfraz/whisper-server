@@ -62,11 +62,6 @@ func main() {
 		database.SubscribeNewInvites()
 	}()
 
-	// Send mail on user creation
-	go func() {
-		database.SubscribeNewUsers()
-	}()
-
 	// Create admin invite if admin does not exist
 	err = database.CreateAdminInvite()
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,13 +35,14 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
 	}
 	// Validate public key (add newlines to start/end)
-	publicKey := strings.Replace(strings.Replace(request.PublicKey, "-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n", 1), "-----END PUBLIC KEY-----", "\n-----END PUBLIC KEY-----", 1)
+	// publicKey := strings.Replace(strings.Replace(request.PublicKey, "-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n", 1), "-----END PUBLIC KEY-----", "\n-----END PUBLIC KEY-----", 1)
+	publicKey := request.PublicKey
 	_, err = utils.LoadRsaPublicKey([]byte(publicKey))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Create user
-	newUser := models.NewUser(request.Username, inviteData.Mail, publicKey, inviteData.Admin)
+	newUser := models.NewUser(request.Username, publicKey, inviteData.Admin)
 	err = database.InsertUser(newUser, request.InviteCode)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)

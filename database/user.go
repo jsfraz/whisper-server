@@ -3,10 +3,6 @@ package database
 import (
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
-	"log"
-	"strconv"
-
-	"github.com/aymerick/raymond"
 )
 
 // Check if user exists by username.
@@ -99,39 +95,6 @@ func GetUserById(userId uint64) (*models.User, error) {
 		return nil, err
 	}
 	return &user, nil
-}
-
-// Subscribe for new users and send mail.
-func SubscribeNewUsers() {
-	PostgresTriggerListener(utils.GetSingleton().GetPostgresConnStr(), "create_user_channel", func(s string) {
-		// Get user
-		newUserId, _ := strconv.ParseUint(s, 10, 64)
-		newUser, err := GetUserById(newUserId)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		// Load template
-		template, err := utils.ReadFile("./mailTemplates/userCreated.hbs")
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		// Render template
-		content, err := raymond.Render(
-			*template,
-			map[string]string{
-				"username": newUser.Username,
-				"footer":   utils.GetMailFooter(),
-			},
-		)
-		// Send mail
-		err = utils.SendMail(newUser.Mail, "Account successfully created", content)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	})
 }
 
 // Get all users except the user.
