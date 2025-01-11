@@ -6,27 +6,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 
-<body style="background-color: #bee3f8; font-family: Arial, sans-serif;">
-  <div style="margin: 0 auto; max-width: 80%; background-color: #ffffff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-    <!-- Blue Line -->
-    <div style="height: 2px; background-color: #60a5fa;"></div>
+<body style="background-color: #f0f9ff; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px;">
+  <div style="margin: 0 auto; max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+    <!-- Header s gradientem -->
+    <div style="height: 6px; background-image: linear-gradient(to right, #3b82f6, #1e40af); border-radius: 8px 8px 0 0;"></div>
 
-    <!-- Subject -->
-    <div style="padding-top: 1.5rem; text-align: center;">
-      <h1 style="font-size: 1.5rem; font-weight: 600; color: #1a4c92;">Admin registration</h1>
+    <!-- Logo a nadpis -->
+    <div style="padding: 2rem 0 1rem; text-align: center;">
+      <h1 style="font-size: 24px; font-weight: 700; color: #1e40af; margin: 0;">Admin Registration</h1>
     </div>
 
-    <!-- Email Content -->
-    <div style="padding-left: 2.5rem; padding-right: 2.5rem; padding-top: 0.5rem; padding-bottom: 1.5rem;">
-      <p style="margin-top: 1rem; color: #4b5563;">Scan the QR code below in <a style="text-decoration: underline; color: #60a5fa;" href="https://github.com/jsfraz/whisper">Whisper app</a> to create an admin account.</p>
-      <img style="margin-top: 0.5rem; height:8rem" src="data:image/png;base64,{{ qrBase64 }}">
-      <p style="margin-top: 1rem; color: #4b5563;">The QR code is valid until <strong>{{ validUntil }}</strong>. If you do not create admin account before the invitation expires, you must restart Whisper server in order to resend this e-mail to create admin account.</p>
+    <!-- Hlavní obsah -->
+    <div style="padding: 1.5rem 2rem;">
+      <p style="margin: 0 0 1.5rem; color: #374151; line-height: 1.6;">
+        Scan the QR code below in the <a style="color: #3b82f6; font-weight: 500; text-decoration: none;" href="https://github.com/jsfraz/whisper">Whisper app</a> to create your admin account.
+      </p>
+      
+      <!-- QR kód v kontejneru -->
+      <div style="background-color: #f8fafc; padding: 1.5rem; border-radius: 6px; text-align: center; margin: 1.5rem 0;">
+        <img style="height: 160px; width: auto;" src="data:image/png;base64,{{ qrBase64 }}">
+      </div>
+
+      <p style="margin: 1.5rem 0 0; color: #374151; line-height: 1.6;">
+        The QR code is valid until <strong style="color: #1e40af;">{{ validUntil }}</strong>. If you do not create admin account before the invitation expires, you must restart Whisper server in order to resend this e-mail.
+      </p>
     </div>
 
-    <!-- Footer with darker color -->
-    <div
-      style="padding-top: 0.5rem; padding-bottom: 0.5rem; background-color: #1a4c92; color: #ffffff; text-align: center;">
-      <p style="font-size: 0.8rem;">{{ footer }}</p>
+    <!-- Patička -->
+    <div style="padding: 1rem; background-color: #1e40af; color: #ffffff; text-align: center; border-radius: 0 0 8px 8px;">
+      <p style="font-size: 0.875rem; margin: 0;">{{ footer }}</p>
     </div>
   </div>
 </body>
