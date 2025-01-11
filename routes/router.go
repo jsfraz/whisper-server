@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"jsfraz/whisper-server/handlers"
 	"jsfraz/whisper-server/utils"
 
 	"github.com/gin-contrib/cors"
@@ -67,6 +68,10 @@ func NewRouter() (*fizz.Fizz, error) {
 		}
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
+
+	// TODO single use token for websocket auth
+	// WebSocket handler
+	engine.GET("/ws", handlers.WebSocketHandler)
 
 	// Setup other routes
 	AuthRoute(grp)

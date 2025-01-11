@@ -34,6 +34,10 @@ func main() {
 	// Setup Valkey
 	database.InitValkey()
 
+	// Initialize Hub
+	singleton.Hub = utils.NewHub()
+	go singleton.Hub.Run()
+
 	// Get router or panic
 	router, err := routes.NewRouter()
 	if err != nil {

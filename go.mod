@@ -7,6 +7,7 @@ require (
 	github.com/aymerick/raymond v2.0.2+incompatible
 	github.com/gin-contrib/cors v1.7.3
 	github.com/gin-gonic/gin v1.10.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/loopfz/gadgeto v0.11.4
 	github.com/wI2L/fizz v0.22.0
 	github.com/yeqown/go-qrcode/v2 v2.2.4
