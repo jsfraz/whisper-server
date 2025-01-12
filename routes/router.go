@@ -19,10 +19,14 @@ import (
 func NewRouter() (*fizz.Fizz, error) {
 	// Gin instance
 	engine := gin.New()
-	// Logger middleware, skip websocket
-	engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		SkipPaths: []string{"/ws"},
-	}))
+	// Logger middleware
+	if utils.GetSingleton().Config.GinMode != "release" {
+		engine.Use(gin.Logger())
+	} else {
+		engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+			SkipPaths: []string{"/ws"},
+		}))
+	}
 	// Recovery middleware
 	engine.Use(gin.Recovery())
 	// Default cors config, Allow Origin, Authorization header

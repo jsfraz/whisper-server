@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
 )
 
@@ -39,14 +41,16 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid access token"})
-		log.Println("invalid access token")
+		err = errors.New("access token not found")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		log.Println(err.Error())
 		return
 	}
 	// Check if provided token and token from Redis are the same
 	if accessToken != accessTokenById {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid access token"})
-		log.Println("invalid access token")
+		err = errors.New("access token mismatch")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		log.Println(err.Error())
 		return
 	}
 
@@ -78,27 +82,60 @@ func WebSocketHandler(c *gin.Context) {
 			conn.Conn.Close()
 		}()
 
+		// Register custom validators
+		validator := validator.New()
+		validator.RegisterValidation("action", models.ValidateAction)
+		validator.RegisterValidation("topic", models.ValidateTopic)
+
 		for {
-			// Message structure for WebSocket communication
-			var msg struct {
-				Action  string          `json:"action"` // Supported actions: "subscribe", "unsubscribe", "publish"
-				Topic   string          `json:"topic"`
-				Payload json.RawMessage `json:"payload,omitempty"`
+			// Read and parse incoming message
+			messageType, payload, err := conn.Conn.ReadMessage()
+			if err != nil {
+				log.Println(err)
+				response := models.NewResponse(models.ResponseTypeError, err.Error())
+				binaryResponse, _ := models.MarshalResponse(response)
+				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				continue
 			}
 
-			// Read and parse incoming message
-			err := conn.Conn.ReadJSON(&msg)
+			// Check message type
+			if messageType != websocket.BinaryMessage {
+				err = errors.New("invalid message type, only binary messages are supported")
+				log.Println(err)
+				response := models.NewResponse(models.ResponseTypeError, err.Error())
+				binaryResponse, _ := models.MarshalResponse(response)
+				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				continue
+			}
+
+			// WebSocket message
+			var msg models.WsMessage
+			err = json.Unmarshal(payload, &msg)
 			if err != nil {
-				break
+				log.Println(err)
+				response := models.NewResponse(models.ResponseTypeError, err.Error())
+				binaryResponse, _ := models.MarshalResponse(response)
+				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				continue
+			}
+
+			// Validate message
+			err = validator.Struct(msg)
+			if err != nil {
+				log.Println(err)
+				response := models.NewResponse(models.ResponseTypeError, err.Error())
+				binaryResponse, _ := models.MarshalResponse(response)
+				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				continue
 			}
 
 			// Process message based on action type
 			switch msg.Action {
-			case "subscribe":
+			case models.ActionSubscribe:
 				conn.Subscribe(msg.Topic)
-			case "unsubscribe":
+			case models.ActionUnsubscribe:
 				conn.Unsubscribe(msg.Topic)
-			case "publish":
+			case models.ActionPublish:
 				utils.GetSingleton().Hub.Broadcast <- models.Message{
 					Topic:   msg.Topic,
 					Payload: msg.Payload,
