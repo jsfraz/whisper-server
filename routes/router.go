@@ -18,7 +18,13 @@ import (
 //	@return error
 func NewRouter() (*fizz.Fizz, error) {
 	// Gin instance
-	engine := gin.Default()
+	engine := gin.New()
+	// Logger middleware, skip websocket
+	engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/ws"},
+	}))
+	// Recovery middleware
+	engine.Use(gin.Recovery())
 	// Default cors config, Allow Origin, Authorization header
 	config := cors.DefaultConfig()
 	config.AllowAllOrigins = true
