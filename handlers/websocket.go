@@ -2,21 +2,58 @@ package handlers
 
 import (
 	"encoding/json"
+	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
-// WebSocketHandler handles incoming WebSocket connections and their lifecycle
+// Handles incoming WebSocket connections and their lifecycle
+//
+//	@param c
 func WebSocketHandler(c *gin.Context) {
-	// Configure WebSocket upgrader
-	upgrader := websocket.Upgrader{
-		CheckOrigin: nil,
+	// TODO redis for single use tokens
+	// Get access token from request
+	accessToken := c.Query("wsAccessToken")
+	if accessToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "wsAccessToken is required"})
+		log.Println("accessToken is required")
+		return
+	}
+	// Validate access token
+	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsTokenSecret)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		log.Println(err.Error())
+		return
+	}
+	// Check if token exists in Redis
+	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		log.Println(err.Error())
+		return
+	}
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid access token"})
+		log.Println("invalid access token")
+		return
+	}
+	// Check if provided token and token from Redis are the same
+	if accessToken != accessTokenById {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid access token"})
+		log.Println("invalid access token")
+		return
 	}
 
+	// Configure WebSocket upgrader
+	upgrader := websocket.Upgrader{
+		CheckOrigin: nil, // No need to check origin when users connect from the mobile app
+	}
 	// Upgrade HTTP connection to WebSocket
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -28,8 +65,8 @@ func WebSocketHandler(c *gin.Context) {
 	conn := &utils.WSConnection{
 		Conn:   ws,
 		Topics: make(map[string]bool),
+		UserId: userId,
 	}
-
 	// Register new connection with the hub
 	utils.GetSingleton().Hub.Register <- conn
 

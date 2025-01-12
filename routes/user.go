@@ -16,7 +16,7 @@ import (
 func UserRoute(g *fizz.RouterGroup) {
 
 	grp := g.Group("user", "User", "Operations associated with a user account.")
-	grp.Use(middlewares.Auth)
+	grp.Use(middlewares.AuthMiddleware)
 
 	/*
 		// Who am I

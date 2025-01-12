@@ -12,6 +12,7 @@ import (
 type WSConnection struct {
 	Conn    *websocket.Conn
 	Topics  map[string]bool
+	UserId  uint64
 	writeMu sync.Mutex
 }
 

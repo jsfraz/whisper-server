@@ -10,7 +10,7 @@ type AuthResponse struct {
 //	@param accessToken
 //	@param refreshToken
 //	@return *AuthResponse
-func NewAuth(accessToken string, refreshToken string) *AuthResponse {
+func NewAuthResponse(accessToken string, refreshToken string) *AuthResponse {
 	a := new(AuthResponse)
 	a.AccessToken = accessToken
 	a.RefreshToken = refreshToken

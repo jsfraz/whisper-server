@@ -16,9 +16,9 @@ import (
 // If it is not valid, it returns a status of 401.
 //
 //	@param c Gin context
-func Auth(c *gin.Context) {
+func AuthMiddleware(c *gin.Context) {
 	// Get access token from context and check it
-	userId, err := utils.TokenValid(utils.ExtractTokenFromContext(c), utils.GetSingleton().Config.AccessTokenSecret)
+	userId, _, err := utils.TokenValid(utils.ExtractTokenFromContext(c), utils.GetSingleton().Config.AccessTokenSecret)
 	// Invalid token
 	if err != nil {
 		/*

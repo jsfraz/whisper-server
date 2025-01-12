@@ -80,16 +80,16 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
 	// Generate access token
-	accessToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret)
+	accessToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Generate refresh token
-	refreshToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.RefreshTokenLifespan, utils.GetSingleton().Config.RefreshTokenSecret)
+	refreshToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.RefreshTokenLifespan, utils.GetSingleton().Config.RefreshTokenSecret, nil)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	return models.NewAuth(accessToken, refreshToken), nil
+	return models.NewAuthResponse(accessToken, refreshToken), nil
 }
 
 // Refresh user access token.
@@ -100,7 +100,7 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 //	@return error
 func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.RefreshResponse, error) {
 	// Validate token and get user id
-	userId, err := utils.TokenValid(refresh.RefreshToken, utils.GetSingleton().Config.RefreshTokenSecret)
+	userId, _, err := utils.TokenValid(refresh.RefreshToken, utils.GetSingleton().Config.RefreshTokenSecret)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
@@ -114,7 +114,7 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
 	}
 	// Generate access token
-	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret)
+	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}

@@ -73,11 +73,13 @@ func NewRouter() (*fizz.Fizz, error) {
 	// WebSocket handler
 	engine.GET("/ws", handlers.WebSocketHandler)
 
+	// TODO detailed description
+
 	// Setup other routes
 	AuthRoute(grp)
 	UserRoute(grp)
 	InviteRoute(grp)
-
+	WsAuthRoute(grp)
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())
 	}

@@ -27,7 +27,7 @@ func PushInvite(code string, invite models.Invite, ttl int) error {
 		return err
 	}
 	// Push
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	err = client.Do(context.Background(), client.B().Set().Key(code).Value(string(i)).ExSeconds(int64(ttl)).Build()).Error()
 	if err != nil {
 		return err
@@ -37,12 +37,12 @@ func PushInvite(code string, invite models.Invite, ttl int) error {
 
 // Subscribe for new invites and send mail.
 func SubscribeNewInvites() {
-	c, cancel := utils.GetSingleton().Valkey.Dedicate()
+	c, cancel := utils.GetSingleton().ValkeyInvite.Dedicate()
 	defer cancel()
 	wait := c.SetPubSubHooks(valkey.PubSubHooks{
 		OnMessage: func(m valkey.PubSubMessage) {
 			// Get invite from Valkey
-			client := utils.GetSingleton().Valkey
+			client := utils.GetSingleton().ValkeyInvite
 			result, err := client.Do(context.Background(), client.B().Get().Key(m.Message).Build()).AsBytes()
 			// Return error except if is Valkey error
 			if err != nil && !errors.As(err, &valkeyErr) {
@@ -119,7 +119,7 @@ func SubscribeNewInvites() {
 //	@return []byte
 //	@return error
 func GetInviteDataByCode(code string) (bool, []byte, error) {
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	result, err := client.Do(context.Background(), client.B().Get().Key(code).Build()).AsBytes()
 	// Return error except if is Valkey error
 	if err != nil && !errors.As(err, &valkeyErr) {
@@ -137,7 +137,7 @@ func GetInviteDataByCode(code string) (bool, []byte, error) {
 //	@param code
 //	@return error
 func DeleteInviteDataByCode(code string) error {
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	return client.Do(context.Background(), client.B().Del().Key(code).Build()).Error()
 }
 
@@ -146,7 +146,7 @@ func DeleteInviteDataByCode(code string) error {
 //	@return bool
 //	@return error
 func AdminInviteExists() (bool, error) {
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	// Get all keys
 	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
 	if err != nil {
@@ -205,7 +205,7 @@ func CreateAdminInvite() error {
 //	@return error
 func GetAllInvites() (*[]models.Invite, error) {
 	var invites []models.Invite = []models.Invite{}
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	// Get all keys
 	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
 	if err != nil {

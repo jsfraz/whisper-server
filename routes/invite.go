@@ -16,7 +16,7 @@ import (
 func InviteRoute(g *fizz.RouterGroup) {
 
 	grp := g.Group("invite", "Invite", "Operations associated with registration invites.")
-	grp.Use(middlewares.Auth)
+	grp.Use(middlewares.AuthMiddleware)
 
 	// Create registration invite
 	grp.POST("",
