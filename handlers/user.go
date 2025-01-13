@@ -77,3 +77,17 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	}
 	return nil
 }
+
+// Search users by username.
+//
+//	@param c
+//	@return *[]models.User
+//	@return error
+func SearchUsers(c *gin.Context, request *models.UsernameQuery) (*[]models.User, error) {
+	userId, _ := c.Get("userId")
+	users, err := database.SearchUsersByUsername(request.Username, userId.(uint64))
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return users, nil
+}

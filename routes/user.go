@@ -57,4 +57,17 @@ func UserRoute(g *fizz.RouterGroup) {
 			true),
 		tonic.Handler(handlers.DeleteUsers, http.StatusOK),
 	)
+
+	// Search users
+	grp.GET("search",
+		utils.CreateOperationOption("Search users",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.SearchUsers, http.StatusOK),
+	)
 }

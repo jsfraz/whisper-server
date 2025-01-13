@@ -146,3 +146,18 @@ func GetUserPublicKey(userId uint64) (string, error) {
 	}
 	return publicKey, nil
 }
+
+// Search users by username. Return all except the user.
+//
+//	@param username
+//	@param userId
+//	@return *[]models.User
+//	@return error
+func SearchUsersByUsername(username string, userId uint64) (*[]models.User, error) {
+	var users []models.User
+	err := utils.GetSingleton().Postgres.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+	return &users, nil
+}
