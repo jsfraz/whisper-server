@@ -18,7 +18,7 @@ import (
 //	@return string
 func RandomASCIIString(length int) string {
 	// Chars
-	const charset = "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+	const charset = "!%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 	// Random generator
 	var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 	// Byte slice for result
