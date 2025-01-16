@@ -16,22 +16,10 @@ type WSConnection struct {
 	writeMu sync.Mutex
 }
 
-func (c *WSConnection) Subscribe(topic models.Topic) {
-	c.Topics[string(topic)] = true
-}
-
-func (c *WSConnection) Unsubscribe(topic models.Topic) {
-	delete(c.Topics, string(topic))
-}
-
-func (c *WSConnection) isSubscribed(topic models.Topic) bool {
-	return c.Topics[string(topic)]
-}
-
-func (c *WSConnection) send(message models.Message) {
+func (c *WSConnection) send(message models.WsResponse) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	binaryMessage, _ := models.MarshalMessage(message)
+	binaryMessage, _ := models.MarshalWsResponse(message)
 	c.Conn.WriteMessage(websocket.BinaryMessage, binaryMessage)
 }
