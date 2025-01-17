@@ -49,6 +49,10 @@ type Config struct {
 	// Refresh token
 	RefreshTokenSecret   string `envconfig:"REFRESH_TOKEN_SECRET" required:"true"`
 	RefreshTokenLifespan int    `envconfig:"REFRESH_TOKEN_LIFESPAN" required:"true"`
+
+	// WebSocket short life access token
+	WsTokenSecret   string `envconfig:"WS_ACCESS_TOKEN_SECRET" required:"true"`
+	WsTokenLifespan int    `envconfig:"WS_ACCESS_TOKEN_LIFESPAN" required:"true"`
 }
 
 // Loads config from environmental values.

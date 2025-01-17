@@ -17,7 +17,7 @@ func main() {
 	log.SetPrefix("whisper: ")
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
-	log.Printf(fmt.Sprintf("Starting on %s...", addr))
+	log.Printf("starting on %s...", addr)
 
 	// Setup singleton
 	singleton := utils.GetSingleton()
@@ -33,6 +33,10 @@ func main() {
 	database.InitPostgres()
 	// Setup Valkey
 	database.InitValkey()
+
+	// Initialize Hub
+	singleton.Hub = utils.NewHub()
+	go singleton.Hub.Run()
 
 	// Get router or panic
 	router, err := routes.NewRouter()
@@ -60,11 +64,6 @@ func main() {
 	// Send mail on new invite creation
 	go func() {
 		database.SubscribeNewInvites()
-	}()
-
-	// Send mail on user creation
-	go func() {
-		database.SubscribeNewUsers()
 	}()
 
 	// Create admin invite if admin does not exist

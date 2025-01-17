@@ -10,7 +10,8 @@ import (
 
 // Initializes database or panics.
 func InitValkey() {
-	valkey, err := valkey.NewClient(valkey.ClientOption{
+	// Valkey for invites
+	valkeyInvite, err := valkey.NewClient(valkey.ClientOption{
 		InitAddress: []string{
 			fmt.Sprintf("%s:%d",
 				utils.GetSingleton().Config.ValkeyHost,
@@ -24,5 +25,21 @@ func InitValkey() {
 		log.Panicln(err)
 	}
 
-	utils.GetSingleton().Valkey = valkey
+	// Valkey for WebSocket access tokens
+	valkeyWs, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress: []string{
+			fmt.Sprintf("%s:%d",
+				utils.GetSingleton().Config.ValkeyHost,
+				utils.GetSingleton().Config.ValkeyPort,
+			),
+		},
+		Password: utils.GetSingleton().Config.ValkeyPassword,
+		SelectDB: 1},
+	)
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	utils.GetSingleton().ValkeyInvite = valkeyInvite
+	utils.GetSingleton().ValkeyWs = valkeyWs
 }

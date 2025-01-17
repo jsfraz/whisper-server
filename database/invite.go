@@ -20,14 +20,14 @@ var valkeyErr *valkey.ValkeyError
 //	@param invite
 //	@param ttl
 //	@return error
-func PushInvite(code string, invite models.InviteData, ttl int) error {
+func PushInvite(code string, invite models.Invite, ttl int) error {
 	// Marshall JSON
 	i, err := invite.MarshalBinary()
 	if err != nil {
 		return err
 	}
 	// Push
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	err = client.Do(context.Background(), client.B().Set().Key(code).Value(string(i)).ExSeconds(int64(ttl)).Build()).Error()
 	if err != nil {
 		return err
@@ -37,12 +37,12 @@ func PushInvite(code string, invite models.InviteData, ttl int) error {
 
 // Subscribe for new invites and send mail.
 func SubscribeNewInvites() {
-	c, cancel := utils.GetSingleton().Valkey.Dedicate()
+	c, cancel := utils.GetSingleton().ValkeyInvite.Dedicate()
 	defer cancel()
 	wait := c.SetPubSubHooks(valkey.PubSubHooks{
 		OnMessage: func(m valkey.PubSubMessage) {
 			// Get invite from Valkey
-			client := utils.GetSingleton().Valkey
+			client := utils.GetSingleton().ValkeyInvite
 			result, err := client.Do(context.Background(), client.B().Get().Key(m.Message).Build()).AsBytes()
 			// Return error except if is Valkey error
 			if err != nil && !errors.As(err, &valkeyErr) {
@@ -50,7 +50,7 @@ func SubscribeNewInvites() {
 				return
 			}
 			// Get inviteData from JSON
-			inviteData, err := models.InviteDataFromJson(result)
+			inviteData, err := models.InviteFromJson(result)
 			if err != nil {
 				log.Println(err)
 				return
@@ -76,7 +76,7 @@ func SubscribeNewInvites() {
 				subject = "Registration invite"
 			}
 			// Generate QR code
-			inviteJsonBytes, err := models.NewInvite(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
+			inviteJsonBytes, err := models.NewInviteData(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
 			if err != nil {
 				log.Println(err)
 				return
@@ -119,7 +119,7 @@ func SubscribeNewInvites() {
 //	@return []byte
 //	@return error
 func GetInviteDataByCode(code string) (bool, []byte, error) {
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	result, err := client.Do(context.Background(), client.B().Get().Key(code).Build()).AsBytes()
 	// Return error except if is Valkey error
 	if err != nil && !errors.As(err, &valkeyErr) {
@@ -137,7 +137,7 @@ func GetInviteDataByCode(code string) (bool, []byte, error) {
 //	@param code
 //	@return error
 func DeleteInviteDataByCode(code string) error {
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	return client.Do(context.Background(), client.B().Del().Key(code).Build()).Error()
 }
 
@@ -146,7 +146,7 @@ func DeleteInviteDataByCode(code string) error {
 //	@return bool
 //	@return error
 func AdminInviteExists() (bool, error) {
-	client := utils.GetSingleton().Valkey
+	client := utils.GetSingleton().ValkeyInvite
 	// Get all keys
 	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
 	if err != nil {
@@ -161,7 +161,7 @@ func AdminInviteExists() (bool, error) {
 		}
 		if inviteDataBytes != nil {
 			// Unmarshall invite data
-			inviteData, err := models.InviteDataFromJson(inviteDataBytes)
+			inviteData, err := models.InviteFromJson(inviteDataBytes)
 			if err != nil {
 				return false, err
 			}
@@ -191,10 +191,42 @@ func CreateAdminInvite() error {
 	// Send admin invite
 	if !adminExists && !adminInviteExists {
 		ttl := utils.GetSingleton().Config.AdminInviteTtl
-		err = PushInvite(utils.RandomASCIIString(64), *models.NewInviteData(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
+		err = PushInvite(utils.RandomASCIIString(64), *models.NewInvite(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Get all invites
+//
+//	@return *[]models.Invite
+//	@return error
+func GetAllInvites() (*[]models.Invite, error) {
+	var invites []models.Invite = []models.Invite{}
+	client := utils.GetSingleton().ValkeyInvite
+	// Get all keys
+	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
+	if err != nil {
+		return nil, err
+	}
+	// Zero keys
+	if len(keys) == 0 {
+		return &invites, nil
+	}
+	// Get all invites as JSON
+	invitesJson, err := client.Do(context.Background(), client.B().Mget().Key(keys...).Build()).AsStrSlice()
+	if err != nil {
+		return nil, err
+	}
+	// Unmarshall JSON to Invite
+	for _, i := range invitesJson {
+		invite, err := models.InviteFromJson([]byte(i))
+		if err != nil {
+			return nil, err
+		}
+		invites = append(invites, *invite)
+	}
+	return &invites, nil
 }

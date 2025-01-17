@@ -14,9 +14,11 @@ var (
 )
 
 type Singleton struct {
-	Config   Config
-	Postgres gorm.DB
-	Valkey   valkey.Client
+	Config       Config
+	Postgres     gorm.DB
+	ValkeyInvite valkey.Client
+	ValkeyWs     valkey.Client
+	Hub          *Hub
 }
 
 // Gets Singleton instance

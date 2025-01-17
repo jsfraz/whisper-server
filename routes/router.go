@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"jsfraz/whisper-server/handlers"
 	"jsfraz/whisper-server/utils"
 
 	"github.com/gin-contrib/cors"
@@ -11,13 +12,23 @@ import (
 	"github.com/wI2L/fizz/openapi"
 )
 
-// Returns a new router
+// Returns a new API router.
 //
 //	@return *fizz.Fizz
 //	@return error
 func NewRouter() (*fizz.Fizz, error) {
 	// Gin instance
-	engine := gin.Default()
+	engine := gin.New()
+	// Logger middleware
+	if utils.GetSingleton().Config.GinMode != "release" {
+		engine.Use(gin.Logger())
+	} else {
+		engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+			SkipPaths: []string{"/ws"},
+		}))
+	}
+	// Recovery middleware
+	engine.Use(gin.Recovery())
 	// Default cors config, Allow Origin, Authorization header
 	config := cors.DefaultConfig()
 	config.AllowAllOrigins = true
@@ -68,10 +79,17 @@ func NewRouter() (*fizz.Fizz, error) {
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
 
-	// Setup other routes
-	// AuthRoute(grp.Group("auth", "Authentication", "User authentication."))
-	UserRoute(grp.Group("user", "User", "Operations associated with a user account."))
+	// TODO single use token for websocket auth
+	// WebSocket handler
+	engine.GET("/ws", handlers.WebSocketHandler)
 
+	// TODO detailed description
+
+	// Setup other routes
+	AuthRoute(grp)
+	UserRoute(grp)
+	InviteRoute(grp)
+	WsAuthRoute(grp)
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())
 	}

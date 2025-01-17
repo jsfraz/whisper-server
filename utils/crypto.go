@@ -1,8 +1,11 @@
 package utils
 
 import (
+	"crypto"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"math/rand"
@@ -15,7 +18,7 @@ import (
 //	@return string
 func RandomASCIIString(length int) string {
 	// Chars
-	const charset = "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+	const charset = "!%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 	// Random generator
 	var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 	// Byte slice for result
@@ -54,9 +57,39 @@ func LoadRsaPublicKey(pemData []byte) (*rsa.PublicKey, error) {
 }
 
 // Validate RSA public key.
+//
+//	@param publicKey
+//	@return error
 func validateRsaPublicKey(publicKey *rsa.PublicKey) error {
 	if publicKey.N.BitLen() < 4096 {
 		return errors.New("RSA key size is too small")
+	}
+	return nil
+}
+
+// Verify RSA signature.
+//
+//	@param publicKey
+//	@param base64Nonce
+//	@param base64SignedNonce
+//	@return error
+func VerifyRSASignature(publicKey *rsa.PublicKey, base64Nonce string, base64SignedNonce string) error {
+	// Decode signed nonce
+	decodedSignedNonce, err := base64.StdEncoding.DecodeString(base64SignedNonce)
+	if err != nil {
+		return err
+	}
+	// Decode nonce
+	decodedNonce, err := base64.StdEncoding.DecodeString(string(base64Nonce))
+	if err != nil {
+		return err
+	}
+	// Hash SHA-256 nonce
+	hash := sha256.Sum256(decodedNonce)
+	// Verify
+	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hash[:], decodedSignedNonce)
+	if err != nil {
+		return err
 	}
 	return nil
 }
