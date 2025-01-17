@@ -29,6 +29,8 @@ type Hub struct {
 }
 
 // NewHub creates and initializes a new Hub instance
+//
+//	@return *Hub
 func NewHub() *Hub {
 	return &Hub{
 		Connections: make(map[*WSConnection]bool),
@@ -68,7 +70,7 @@ func (h *Hub) Run() {
 			// Private message
 			case models.WsMessageTopicMessage:
 				// Unmarshall private message
-				var privateMessage models.PrivateMessageReceive
+				var privateMessage models.NewPrivateMessageReceive
 				err := json.Unmarshal(msgSenderPair.Message.Payload, &privateMessage)
 				if err != nil {
 					// log.Println(err)
@@ -97,7 +99,7 @@ func (h *Hub) Run() {
 				online := false
 				for conn := range h.Connections {
 					if conn.UserId == privateMessage.ReceiverId {
-						conn.send(models.NewWsResponse(models.WsResponseTypeMessage, models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message)))
+						conn.send(models.NewWsResponse(models.WsResponseTypeMessage, models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt)))
 						online = true
 						break
 					}
@@ -113,6 +115,9 @@ func (h *Hub) Run() {
 }
 
 // Send error response to sender
+//
+//	@param senderId
+//	@param err
 func (h *Hub) SendError(senderId uint64, err error) {
 	response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
 	for conn := range h.Connections {
