@@ -53,6 +53,9 @@ type Config struct {
 	// WebSocket short life access token
 	WsTokenSecret   string `envconfig:"WS_ACCESS_TOKEN_SECRET" required:"true"`
 	WsTokenLifespan int    `envconfig:"WS_ACCESS_TOKEN_LIFESPAN" required:"true"`
+
+	// Message TTL
+	MessageTtl int `envconfig:"MESSAGE_TTL" required:"true"`
 }
 
 // Loads config from environmental values.

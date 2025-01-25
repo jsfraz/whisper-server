@@ -1,12 +1,15 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"jsfraz/whisper-server/models"
 	"sync"
 
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 )
 
 // Hub manages WebSocket connections and message broadcasting
@@ -95,15 +98,14 @@ func (h *Hub) Run() {
 					continue
 				}
 				// Check if user exists
-				var count int64
-				err = GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", privateMessage.ReceiverId).Count(&count).Error
+				exists, err := userExistsById(msgSenderPair.SenderId)
 				if err != nil {
 					//log.Println(err)
 					h.SendError(msgSenderPair.SenderId, err)
 					h.mu.RUnlock()
 					continue
 				}
-				if count == 0 {
+				if !exists {
 					//log.Println(err)
 					h.SendError(msgSenderPair.SenderId, errors.New("user does not exist"))
 					h.mu.RUnlock()
@@ -111,15 +113,17 @@ func (h *Hub) Run() {
 				}
 				// Send message to connected client with receiverId
 				online := false
+				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt)
 				for conn := range h.Connections {
 					if conn.UserId == privateMessage.ReceiverId {
-						conn.send(models.NewWsResponse(models.WsResponseTypeMessage, models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt)))
+						conn.send(models.NewWsResponse(models.WsResponseTypeMessage, pm))
 						online = true
 						break
 					}
 				}
 				if !online {
-					// TODO upload message to redis
+					// Push message to Valkey
+					pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
 				}
 			}
 
@@ -140,4 +144,35 @@ func (h *Hub) SendError(senderId uint64, err error) {
 			break
 		}
 	}
+}
+
+// Check if user exists by ID.
+//
+//	@param userId
+//	@return bool
+//	@return error
+func userExistsById(userId uint64) (bool, error) {
+	var count int64
+	err := GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count == 1, nil
+}
+
+// Push PrivateMessage to Valkey.
+//
+//	@param code
+//	@param message
+//	@param ttl
+//	@return error
+func pushMessage(receiverId uint64, message models.PrivateMessage, ttl int) error {
+	// Marshall JSON
+	m, err := message.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	// Push
+	client := GetSingleton().ValkeyMessage
+	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("%d_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
 }

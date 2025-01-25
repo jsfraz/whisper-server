@@ -147,29 +147,41 @@ func DeleteInviteDataByCode(code string) error {
 //	@return error
 func AdminInviteExists() (bool, error) {
 	client := utils.GetSingleton().ValkeyInvite
-	// Get all keys
-	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
-	if err != nil {
-		return false, err
-	}
-	// Cycle trough keys
-	for _, k := range keys {
-		inviteDataBytes, err := client.Do(context.Background(), client.B().Get().Key(k).Build()).AsBytes()
-		if err != nil && !errors.As(err, &valkeyErr) {
-			log.Println(err)
-			continue
+
+	// Use SCAN instead of KEYS
+	var cursor uint64 = 0
+	for {
+		// Scan batch of keys
+		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match("*").Count(100).Build()).AsScanEntry()
+		if err != nil {
+			return false, err
 		}
-		if inviteDataBytes != nil {
-			// Unmarshall invite data
-			inviteData, err := models.InviteFromJson(inviteDataBytes)
-			if err != nil {
-				return false, err
+
+		// Check each key in the batch
+		for _, k := range result.Elements {
+			inviteDataBytes, err := client.Do(context.Background(), client.B().Get().Key(k).Build()).AsBytes()
+			if err != nil && !errors.As(err, &valkeyErr) {
+				log.Println(err)
+				continue
 			}
-			// Check if invite is for admin
-			if inviteData.Admin {
-				return true, nil
+			if inviteDataBytes != nil {
+				// Unmarshall invite data
+				inviteData, err := models.InviteFromJson(inviteDataBytes)
+				if err != nil {
+					return false, err
+				}
+				// Check if invite is for admin
+				if inviteData.Admin {
+					return true, nil
+				}
 			}
 		}
+
+		// Break if cursor is 0 (scan completed)
+		if result.Cursor == 0 {
+			break
+		}
+		cursor = result.Cursor
 	}
 	return false, nil
 }
@@ -206,15 +218,34 @@ func CreateAdminInvite() error {
 func GetAllInvites() (*[]models.Invite, error) {
 	var invites []models.Invite = []models.Invite{}
 	client := utils.GetSingleton().ValkeyInvite
-	// Get all keys
-	keys, err := client.Do(context.Background(), client.B().Keys().Pattern("*").Build()).AsStrSlice()
-	if err != nil {
-		return nil, err
+
+	// Use SCAN instead of KEYS
+	var cursor uint64 = 0
+	var keys []string
+	for {
+		// Scan batch of keys
+		var batch []string
+		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match("*").Count(100).Build()).AsScanEntry()
+		if err != nil {
+			return nil, err
+		}
+		cursor = result.Cursor
+		batch = result.Elements
+
+		// Append batch to all keys
+		keys = append(keys, batch...)
+
+		// Break if cursor is 0 (scan completed)
+		if cursor == 0 {
+			break
+		}
 	}
+
 	// Zero keys
 	if len(keys) == 0 {
 		return &invites, nil
 	}
+
 	// Get all invites as JSON
 	invitesJson, err := client.Do(context.Background(), client.B().Mget().Key(keys...).Build()).AsStrSlice()
 	if err != nil {

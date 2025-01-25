@@ -23,3 +23,25 @@ func NewPrivateMessage(senderId uint64, message json.RawMessage, sentAt time.Tim
 		SentAt:   sentAt,
 	}
 }
+
+// Marshall PrivateMessage to binary.
+//
+//	@return []byte
+//	@return error
+func (p PrivateMessage) MarshalBinary() ([]byte, error) {
+	return json.Marshal(p)
+}
+
+// Unmarshall PrivateMessage.
+//
+//	@param jsonBytes
+//	@return *PrivateMessage
+//	@return error
+func PrivateMessageFromJson(jsonBytes []byte) (*PrivateMessage, error) {
+	var p PrivateMessage
+	err := json.Unmarshal(jsonBytes, &p)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}

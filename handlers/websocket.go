@@ -80,6 +80,9 @@ func WebSocketHandler(c *gin.Context) {
 			conn.Conn.Close()
 		}()
 
+		// Send messages from cache
+		sendMessages(conn)
+
 		// Register custom validators
 		validator := validator.New()
 		validator.RegisterValidation("type", models.ValidateWsMessageType)
@@ -137,4 +140,21 @@ func WebSocketHandler(c *gin.Context) {
 			}
 		}
 	}()
+}
+
+// Send messages from cache.
+func sendMessages(conn *utils.WSConnection) {
+	// Get messages from cache
+	messages, err := database.GetUserPrivateMessages(conn.UserId)
+	if err != nil {
+		// log.Println(err)
+		response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
+		binaryResponse, _ := models.MarshalWsResponse(response)
+		conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+		return
+	}
+	// Send messages
+	response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
+	binaryResponse, _ := models.MarshalWsResponse(response)
+	conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
 }
