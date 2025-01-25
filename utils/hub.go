@@ -116,7 +116,7 @@ func (h *Hub) Run() {
 				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt)
 				for conn := range h.Connections {
 					if conn.UserId == privateMessage.ReceiverId {
-						conn.send(models.NewWsResponse(models.WsResponseTypeMessage, pm))
+						conn.send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
 						online = true
 						break
 					}

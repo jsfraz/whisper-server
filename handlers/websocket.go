@@ -154,7 +154,9 @@ func sendMessages(conn *utils.WSConnection) {
 		return
 	}
 	// Send messages
-	response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
-	binaryResponse, _ := models.MarshalWsResponse(response)
-	conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+	if len(*messages) > 0 {
+		response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
+		binaryResponse, _ := models.MarshalWsResponse(response)
+		conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+	}
 }
