@@ -11,7 +11,6 @@ import (
 // WSConnection for managing WebSocket connections and subscriptions
 type WSConnection struct {
 	Conn    *websocket.Conn
-	Topics  map[string]bool
 	UserId  uint64
 	writeMu sync.Mutex
 }

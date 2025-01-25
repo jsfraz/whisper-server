@@ -67,7 +67,6 @@ func WebSocketHandler(c *gin.Context) {
 	// Create new WebSocket connection with topic subscription support
 	conn := &utils.WSConnection{
 		Conn:   ws,
-		Topics: make(map[string]bool),
 		UserId: userId,
 	}
 	// Register new connection with the hub

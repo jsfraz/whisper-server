@@ -53,22 +53,6 @@ func AdminExists() (bool, error) {
 	return count == 1, nil
 }
 
-/*
-// Returns user by username.
-//
-//	@param username
-//	@return *models.User
-//	@return error
-func GetUserByUsername(username string) (*models.User, error) {
-	var user models.User
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("username = ?", username).Attrs(models.User{}).First(&user).Error
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-*/
-
 // Check if user exists by ID.
 //
 //	@param userId

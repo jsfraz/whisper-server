@@ -3,9 +3,8 @@ package utils
 import (
 	"encoding/json"
 	"errors"
-	"sync"
-
 	"jsfraz/whisper-server/models"
+	"sync"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -92,6 +91,21 @@ func (h *Hub) Run() {
 					err = errors.New("can not send message to self")
 					// log.Println(err)
 					h.SendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
+					continue
+				}
+				// Check if user exists
+				var count int64
+				err = GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", privateMessage.ReceiverId).Count(&count).Error
+				if err != nil {
+					//log.Println(err)
+					h.SendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
+					continue
+				}
+				if count == 0 {
+					//log.Println(err)
+					h.SendError(msgSenderPair.SenderId, errors.New("user does not exist"))
 					h.mu.RUnlock()
 					continue
 				}
