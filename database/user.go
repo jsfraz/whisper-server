@@ -74,7 +74,7 @@ func UserExistsById(userId uint64) (bool, error) {
 //	@return error
 func GetUserById(userId uint64) (*models.User, error) {
 	var user models.User
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Attrs(models.User{}).First(&user).Error // TODO model necessary?
+	err := utils.GetSingleton().Postgres.Where("id = ?", userId).First(&user).Error
 	if err != nil {
 		return nil, err
 	}

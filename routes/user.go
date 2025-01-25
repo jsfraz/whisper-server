@@ -70,4 +70,19 @@ func UserRoute(g *fizz.RouterGroup) {
 			true),
 		tonic.Handler(handlers.SearchUsers, http.StatusOK),
 	)
+
+	// Get user by ID
+	grp.GET("",
+		utils.CreateOperationOption(
+			"Get user by ID",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.GetUserById, http.StatusOK),
+	)
 }

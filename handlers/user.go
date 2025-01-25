@@ -91,3 +91,26 @@ func SearchUsers(c *gin.Context, request *models.UsernameQuery) (*[]models.User,
 	}
 	return users, nil
 }
+
+// Return user by ID.
+//
+//	@param c
+//	@param request
+//	@return *models.User
+//	@return error
+func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, error) {
+	// Check if user exists
+	exists, err := database.UserExistsById(request.Id)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if !exists {
+		return nil, c.AbortWithError(http.StatusNotFound, err)
+	}
+	// Get user
+	user, err := database.GetUserById(request.Id)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return user, nil
+}
