@@ -76,7 +76,7 @@ func (h *Hub) Run() {
 				err := json.Unmarshal(msgSenderPair.Message.Payload, &privateMessage)
 				if err != nil {
 					// log.Println(err)
-					h.SendError(msgSenderPair.SenderId, err)
+					h.sendError(msgSenderPair.SenderId, err)
 					h.mu.RUnlock()
 					continue
 				}
@@ -85,7 +85,7 @@ func (h *Hub) Run() {
 				err = validator.Struct(privateMessage)
 				if err != nil {
 					//log.Println(err)
-					h.SendError(msgSenderPair.SenderId, err)
+					h.sendError(msgSenderPair.SenderId, err)
 					h.mu.RUnlock()
 					continue
 				}
@@ -93,21 +93,21 @@ func (h *Hub) Run() {
 				if msgSenderPair.SenderId == privateMessage.ReceiverId {
 					err = errors.New("can not send message to self")
 					// log.Println(err)
-					h.SendError(msgSenderPair.SenderId, err)
+					h.sendError(msgSenderPair.SenderId, err)
 					h.mu.RUnlock()
 					continue
 				}
 				// Check if user exists
-				exists, err := userExistsById(msgSenderPair.SenderId)
+				exists, err := h.userExistsById(msgSenderPair.SenderId)
 				if err != nil {
 					//log.Println(err)
-					h.SendError(msgSenderPair.SenderId, err)
+					h.sendError(msgSenderPair.SenderId, err)
 					h.mu.RUnlock()
 					continue
 				}
 				if !exists {
 					//log.Println(err)
-					h.SendError(msgSenderPair.SenderId, errors.New("user does not exist"))
+					h.sendError(msgSenderPair.SenderId, errors.New("user does not exist"))
 					h.mu.RUnlock()
 					continue
 				}
@@ -123,7 +123,7 @@ func (h *Hub) Run() {
 				}
 				if !online {
 					// Push message to Valkey
-					pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
+					h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
 				}
 			}
 
@@ -136,7 +136,7 @@ func (h *Hub) Run() {
 //
 //	@param senderId
 //	@param err
-func (h *Hub) SendError(senderId uint64, err error) {
+func (h *Hub) sendError(senderId uint64, err error) {
 	response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
 	for conn := range h.Connections {
 		if conn.UserId == senderId {
@@ -151,7 +151,7 @@ func (h *Hub) SendError(senderId uint64, err error) {
 //	@param userId
 //	@return bool
 //	@return error
-func userExistsById(userId uint64) (bool, error) {
+func (h *Hub) userExistsById(userId uint64) (bool, error) {
 	var count int64
 	err := GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
@@ -162,11 +162,11 @@ func userExistsById(userId uint64) (bool, error) {
 
 // Push PrivateMessage to Valkey.
 //
-//	@param code
+//	@param receiverId
 //	@param message
 //	@param ttl
 //	@return error
-func pushMessage(receiverId uint64, message models.PrivateMessage, ttl int) error {
+func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl int) error {
 	// Marshall JSON
 	m, err := message.MarshalBinary()
 	if err != nil {
