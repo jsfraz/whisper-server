@@ -19,6 +19,7 @@ type Singleton struct {
 	ValkeyInvite  valkey.Client
 	ValkeyWs      valkey.Client
 	ValkeyMessage valkey.Client
+	ValkeyDelUser valkey.Client
 	Hub           *Hub
 }
 

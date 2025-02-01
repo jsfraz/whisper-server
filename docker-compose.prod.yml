@@ -44,7 +44,10 @@ services:
     restart: always
     ports:
       - "6379:6379"
-    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD}"
+    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
+    volumes:
+      - valkey_data:/data
 
 volumes:
   postgres_data:
+  valkey_data:

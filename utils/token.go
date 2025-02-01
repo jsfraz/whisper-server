@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"crypto/rsa"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 )
@@ -68,4 +70,44 @@ func ExtractTokenFromContext(c *gin.Context) string {
 		return strings.Split(bearerToken, " ")[1]
 	}
 	return ""
+}
+
+// Gets user ID from JWT token signed with RSA key.
+//
+// @param tokenStr
+// @return uint64
+// @return error
+func GetUserIdFromToken(tokenStr string) (uint64, error) {
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, jwt.MapClaims{})
+	if err != nil {
+		return 0, err
+	}
+	// User ID
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return 0, fmt.Errorf("invalid token claims")
+	}
+	userId := claims["sub"].(float64)
+	return uint64(userId), nil
+}
+
+// Validates RSA JWT token.
+//
+// @param tokenStr
+// @param publicKey
+// @return error
+func ValidateRsaJwtToken(tokenStr string, publicKey *rsa.PublicKey) error {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return publicKey, nil
+	})
+	if err != nil {
+		return err
+	}
+	if !token.Valid {
+		return fmt.Errorf("invalid token")
+	}
+	return nil
 }

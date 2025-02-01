@@ -10,24 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-/*
-// Returns current user.
-//
-//	@param c
-//	@return *models.User
-//	@return error
-func WhoAmI(c *gin.Context) (*models.User, error) {
-	// User ID
-	userId, _ := c.Get("userId")
-	// Get user by ID
-	user, err := database.GetUserById(userId.(uint64))
-	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	return user, nil
-}
-*/
-
 // Get all users except the user.
 //
 //	@param c
@@ -51,6 +33,7 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 	return users, nil
 }
 
+// TODO send user ws message to delete cache
 // Delete users by ID.
 //
 //	@param c

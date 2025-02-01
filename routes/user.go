@@ -18,18 +18,6 @@ func UserRoute(g *fizz.RouterGroup) {
 	grp := g.Group("user", "User", "Operations associated with a user account.")
 	grp.Use(middlewares.AuthMiddleware)
 
-	/*
-		// Who am I
-		grp.GET("whoAmI",
-			utils.CreateOperationOption("Get current user.",
-				[]int{
-					http.StatusBadRequest,
-					http.StatusInternalServerError,
-				}, false),
-			// Handler
-			tonic.Handler(handlers.WhoAmI, 200))
-	*/
-
 	// Get all users
 	grp.GET("all",
 		utils.CreateOperationOption(
