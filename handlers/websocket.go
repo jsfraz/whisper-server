@@ -80,8 +80,18 @@ func WebSocketHandler(c *gin.Context) {
 			conn.Conn.Close()
 		}()
 
+		// Check if account should be deleted
+		toDelete, err := checkAccountDeletion(conn)
+		if err != nil {
+			conn.SendError(err)
+		}
+		// Terminates goroutine
+		if toDelete {
+			return
+		}
+
 		// Send messages from cache
-		sendMessages(conn)
+		sendMessagesFromCache(conn)
 
 		// Register custom validators
 		validator := validator.New()
@@ -102,10 +112,7 @@ func WebSocketHandler(c *gin.Context) {
 			// Check message type
 			if messageType != websocket.BinaryMessage {
 				err = errors.New("invalid message type, only binary messages are supported")
-				// log.Println(err)
-				response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-				binaryResponse, _ := models.MarshalWsResponse(response)
-				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				conn.SendError(err)
 				continue
 			}
 
@@ -113,20 +120,14 @@ func WebSocketHandler(c *gin.Context) {
 			var msg models.WsMessage
 			err = json.Unmarshal(payload, &msg)
 			if err != nil {
-				// log.Println(err)
-				response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-				binaryResponse, _ := models.MarshalWsResponse(response)
-				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				conn.SendError(err)
 				continue
 			}
 
 			// Validate message
 			err = validator.Struct(msg)
 			if err != nil {
-				// log.Println(err)
-				response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-				binaryResponse, _ := models.MarshalWsResponse(response)
-				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				conn.SendError(err)
 				continue
 			}
 
@@ -143,20 +144,44 @@ func WebSocketHandler(c *gin.Context) {
 }
 
 // Send messages from cache.
-func sendMessages(conn *utils.WSConnection) {
+func sendMessagesFromCache(conn *utils.WSConnection) {
 	// Get messages from cache
 	messages, err := database.GetUserPrivateMessages(conn.UserId)
 	if err != nil {
-		// log.Println(err)
-		response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-		binaryResponse, _ := models.MarshalWsResponse(response)
-		conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+		conn.SendError(err)
 		return
 	}
 	// Send messages
 	if len(*messages) > 0 {
 		response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
-		binaryResponse, _ := models.MarshalWsResponse(response)
-		conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+		conn.Send(response)
 	}
+}
+
+// Checks if user account should be deleted, sends delete message and deletes user.
+//
+//	@param conn
+//	@return bool
+//	@return error
+func checkAccountDeletion(conn *utils.WSConnection) (bool, error) {
+	toDelete, err := database.WillUserBeDeleted(conn.UserId)
+	if err != nil {
+		return false, err
+	}
+	if toDelete {
+		// Delete user
+		err = database.DeleteUserById(conn.UserId)
+		if err != nil {
+			return toDelete, err
+		}
+		// Send delete message
+		response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
+		conn.Send(response)
+		// Delete ID from Valkey
+		database.RemoveDeletedUserId(conn.UserId)
+		// Delete messages from Valkey
+		database.DeleteUserPrivateMessages(conn.UserId)
+
+	}
+	return toDelete, nil
 }

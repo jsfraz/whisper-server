@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
+	"jsfraz/whisper-server/utils"
 	"net/http"
 	"slices"
 
@@ -33,7 +35,6 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 	return users, nil
 }
 
-// TODO send user ws message to delete cache
 // Delete users by ID.
 //
 //	@param c
@@ -53,10 +54,27 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	if slices.Contains(request.Ids, userId.(uint64)) {
 		return c.AbortWithError(http.StatusInternalServerError, errors.New("cannot delete self"))
 	}
-	// Delete
-	err = database.DeleteUsersById(request.Ids)
+	// Check if user is already in list
+	toDelete, err := database.GetAllUsersToDelete()
+	for _, userId := range request.Ids {
+		if slices.Contains(toDelete, userId) {
+			return c.AbortWithError(http.StatusInternalServerError, errors.New(fmt.Sprintf("user %d is already in delete list", userId)))
+		}
+	}
+	// Push delete to Valkey
+	err = database.PushUsersToDelete(request.Ids)
 	if err != nil {
-		return c.AbortWithError(http.StatusInternalServerError, err)
+		c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Delete messages from Valkey
+	for _, userId := range request.Ids {
+		database.DeleteUserPrivateMessages(userId)
+	}
+	// Send ws message to client
+	onlineIds := utils.GetSingleton().Hub.DeleteUsers(request.Ids)
+	// Delete IDs from Valkey
+	for _, id := range onlineIds {
+		database.RemoveDeletedUserId(id)
 	}
 	return nil
 }

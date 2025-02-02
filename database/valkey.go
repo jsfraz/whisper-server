@@ -11,46 +11,25 @@ import (
 // Initializes database or panics.
 func InitValkey() {
 	// Valkey for invites
-	valkeyInvite, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{
-			fmt.Sprintf("%s:%d",
-				utils.GetSingleton().Config.ValkeyHost,
-				utils.GetSingleton().Config.ValkeyPort,
-			),
-		},
-		Password: utils.GetSingleton().Config.ValkeyPassword,
-		SelectDB: 0},
-	)
+	valkeyInvite, err := valkey.NewClient(getValkeyClientOptions(0))
 	if err != nil {
 		log.Panicln(err)
 	}
 
 	// Valkey for WebSocket access tokens
-	valkeyWs, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{
-			fmt.Sprintf("%s:%d",
-				utils.GetSingleton().Config.ValkeyHost,
-				utils.GetSingleton().Config.ValkeyPort,
-			),
-		},
-		Password: utils.GetSingleton().Config.ValkeyPassword,
-		SelectDB: 1},
-	)
+	valkeyWs, err := valkey.NewClient(getValkeyClientOptions(1))
 	if err != nil {
 		log.Panicln(err)
 	}
 
 	// Valkey for user messages
-	valkeyMessage, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{
-			fmt.Sprintf("%s:%d",
-				utils.GetSingleton().Config.ValkeyHost,
-				utils.GetSingleton().Config.ValkeyPort,
-			),
-		},
-		Password: utils.GetSingleton().Config.ValkeyPassword,
-		SelectDB: 2},
-	)
+	valkeyMessage, err := valkey.NewClient(getValkeyClientOptions(2))
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	// Valkey for deleting users
+	valkeyUserDel, err := valkey.NewClient(getValkeyClientOptions(3))
 	if err != nil {
 		log.Panicln(err)
 	}
@@ -58,4 +37,21 @@ func InitValkey() {
 	utils.GetSingleton().ValkeyInvite = valkeyInvite
 	utils.GetSingleton().ValkeyWs = valkeyWs
 	utils.GetSingleton().ValkeyMessage = valkeyMessage
+	utils.GetSingleton().ValkeyDelUser = valkeyUserDel
+}
+
+// Return Valkey clien options.
+//
+//	@param db
+//	@return valkey.ClientOption
+func getValkeyClientOptions(db int) valkey.ClientOption {
+	return valkey.ClientOption{
+		InitAddress: []string{
+			fmt.Sprintf("%s:%d",
+				utils.GetSingleton().Config.ValkeyHost,
+				utils.GetSingleton().Config.ValkeyPort,
+			),
+		},
+		Password: utils.GetSingleton().Config.ValkeyPassword,
+		SelectDB: db}
 }

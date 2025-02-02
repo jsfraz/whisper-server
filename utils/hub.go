@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"jsfraz/whisper-server/models"
+	"slices"
 	"sync"
 
 	"github.com/go-playground/validator/v10"
@@ -75,40 +76,41 @@ func (h *Hub) Run() {
 				var privateMessage models.NewPrivateMessageReceive
 				err := json.Unmarshal(msgSenderPair.Message.Payload, &privateMessage)
 				if err != nil {
-					// log.Println(err)
 					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
 					continue
 				}
 				// Validate private message
 				validator := validator.New()
 				err = validator.Struct(privateMessage)
 				if err != nil {
-					//log.Println(err)
 					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
 					continue
 				}
 				// Check wheteher user is sending message to self
 				if msgSenderPair.SenderId == privateMessage.ReceiverId {
 					err = errors.New("can not send message to self")
-					// log.Println(err)
 					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
+					continue
+				}
+				// Check if message is being sent to user that will be deleted
+				toDelete, err := h.willUserBeDeleted(privateMessage.ReceiverId)
+				if err != nil {
+					h.sendError(msgSenderPair.SenderId, err)
+					continue
+				}
+				if toDelete {
+					err = errors.New("can not send message to this user")
+					h.sendError(msgSenderPair.SenderId, err)
 					continue
 				}
 				// Check if user exists
-				exists, err := h.userExistsById(msgSenderPair.SenderId)
+				exists, err := h.userExistsById(privateMessage.ReceiverId)
 				if err != nil {
-					//log.Println(err)
 					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
 					continue
 				}
 				if !exists {
-					//log.Println(err)
 					h.sendError(msgSenderPair.SenderId, errors.New("user does not exist"))
-					h.mu.RUnlock()
 					continue
 				}
 				// Send message to connected client with receiverId
@@ -116,7 +118,7 @@ func (h *Hub) Run() {
 				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt)
 				for conn := range h.Connections {
 					if conn.UserId == privateMessage.ReceiverId {
-						conn.send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
+						conn.Send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
 						online = true
 						break
 					}
@@ -137,10 +139,11 @@ func (h *Hub) Run() {
 //	@param senderId
 //	@param err
 func (h *Hub) sendError(senderId uint64, err error) {
-	response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
+	//log.Println(err)
 	for conn := range h.Connections {
 		if conn.UserId == senderId {
-			conn.send(response)
+			conn.SendError(err)
+			h.mu.RUnlock()
 			break
 		}
 	}
@@ -175,4 +178,53 @@ func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl 
 	// Push
 	client := GetSingleton().ValkeyMessage
 	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("%d_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
+}
+
+// Check if user with given ID will be deleted.
+//
+//	@param userId
+//	@return bool
+//	@return error
+func (h *Hub) willUserBeDeleted(userId uint64) (bool, error) {
+	client := GetSingleton().ValkeyDelUser
+	// Check len
+	length, err := client.Do(context.Background(), client.B().Llen().Key("delete").Build()).AsInt64()
+	if err != nil {
+		return false, err
+	}
+	// Get all IDs
+	ids, err := client.Do(context.Background(), client.B().Lrange().Key("delete").Start(0).Stop(length).Build()).AsIntSlice()
+	if err != nil {
+		return false, err
+	}
+	result := make([]uint64, len(ids))
+	for i, v := range ids {
+		result[i] = uint64(v)
+	}
+	// Check slice
+	return slices.Contains(result, userId), nil
+}
+
+// Deletes users and sends delete message. Returns slice of online users that have been deleted.
+//
+//	@param ids
+func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var online []uint64 = []uint64{}
+	for conn := range h.Connections {
+		// Find online user
+		if slices.Contains(ids, conn.UserId) {
+			// Delete user
+			err := GetSingleton().Postgres.Where("id = ?", conn.UserId).Delete(&models.User{}).Error
+			if err != nil {
+				continue
+			}
+			online = append(online, conn.UserId)
+			// Send delete message
+			response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
+			conn.Send(response)
+		}
+	}
+	return online
 }

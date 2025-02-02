@@ -8,17 +8,26 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// WSConnection for managing WebSocket connections and subscriptions
 type WSConnection struct {
 	Conn    *websocket.Conn
 	UserId  uint64
 	writeMu sync.Mutex
 }
 
-func (c *WSConnection) send(message models.WsResponse) {
+// Send WsRespons
+//
+//	@param message
+func (c *WSConnection) Send(message models.WsResponse) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
 	binaryMessage, _ := models.MarshalWsResponse(message)
 	c.Conn.WriteMessage(websocket.BinaryMessage, binaryMessage)
+}
+
+// Send error as WsResponse
+//
+//	@param err
+func (c *WSConnection) SendError(err error) {
+	c.Send(models.NewWsResponse(models.WsResponseTypeError, err.Error()))
 }

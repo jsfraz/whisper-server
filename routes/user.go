@@ -17,6 +17,7 @@ func UserRoute(g *fizz.RouterGroup) {
 
 	grp := g.Group("user", "User", "Operations associated with a user account.")
 	grp.Use(middlewares.AuthMiddleware)
+	grp.Use(middlewares.UserDeletionMiddleware)
 
 	// Get all users
 	grp.GET("all",
