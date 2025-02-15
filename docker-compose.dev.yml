@@ -5,6 +5,7 @@ services:
   whisper-postgres:
     image: postgres:alpine
     container_name: whisper-postgres
+    env_file: .env.dev
     ports:
       - "${POSTGRES_PORT}:5432"
     environment:
@@ -18,6 +19,7 @@ services:
   valkey:
     image: valkey/valkey:latest
     container_name: whisper-valkey
+    env_file: .env.dev
     restart: always
     ports:
       - "${VALKEY_PORT}:6379"

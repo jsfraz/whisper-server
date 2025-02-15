@@ -4,7 +4,7 @@ services:
 
   whisper-server:
     container_name: whisper-server
-    env_file: .env.production
+    env_file: .env.prod
     build:
       context: .
     network_mode: bridge
@@ -30,6 +30,7 @@ services:
   whisper-postgres:
     image: postgres:alpine
     container_name: whisper-postgres
+    env_file: .env.prod
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
@@ -41,6 +42,7 @@ services:
   valkey:
     image: valkey/valkey:latest
     container_name: whisper-valkey
+    env_file: .env.prod
     restart: always
     ports:
       - "6379:6379"
