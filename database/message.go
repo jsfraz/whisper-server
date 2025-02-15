@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
+	"sort"
 )
 
 // Get all PrivateMessages for user.
@@ -70,6 +71,10 @@ func GetUserPrivateMessages(userId uint64) (*[]models.PrivateMessage, error) {
 			return nil, err
 		}
 	}
+	// Sort by sentAt
+	sort.Slice(messages, func(i, j int) bool {
+		return messages[i].SentAt.Before(messages[j].SentAt)
+	})
 	return &messages, nil
 }
 
