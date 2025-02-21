@@ -10,16 +10,16 @@ services:
     network_mode: bridge
     restart: always
     ports:
-       - "8080:8080"
+       - "127.0.0.1:8080:8080"
     volumes:
        - /etc/localtime:/etc/localtime:ro
     environment:
       - GIN_MODE=${GIN_MODE}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_HOST=whisper-postgres
       - POSTGRES_DB=${POSTGRES_DB}
-      - VALKEY_HOST=${VALKEY_HOST}
+      - VALKEY_HOST=whisper-valkey
       - VALKEY_PASSWORD=${VALKEY_PASSWORD}
       - ADMIN_MAIL=${ADMIN_MAIL}
       - SMTP_USER=${SMTP_USER}
@@ -39,13 +39,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
   
-  valkey:
+  whisper-valkey:
     image: valkey/valkey:latest
     container_name: whisper-valkey
     env_file: .env.prod
     restart: always
-    ports:
-      - "6379:6379"
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
     volumes:
       - valkey_data:/data

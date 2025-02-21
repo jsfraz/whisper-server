@@ -6,8 +6,6 @@ services:
     image: postgres:alpine
     container_name: whisper-postgres
     env_file: .env.dev
-    ports:
-      - "${POSTGRES_PORT}:5432"
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
@@ -16,13 +14,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
   
-  valkey:
+  whisper-valkey:
     image: valkey/valkey:latest
     container_name: whisper-valkey
     env_file: .env.dev
     restart: always
-    ports:
-      - "${VALKEY_PORT}:6379"
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
     volumes:
       - valkey_data:/data
