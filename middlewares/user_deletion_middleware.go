@@ -1,7 +1,6 @@
 package middlewares
 
 import (
-	"errors"
 	"jsfraz/whisper-server/database"
 	"net/http"
 
@@ -16,20 +15,12 @@ func UserDeletionMiddleware(c *gin.Context) {
 	// Check if user is in delete list
 	toDelete, err := database.WillUserBeDeleted(userId.(uint64))
 	if err != nil {
-		/*
-			c.AbortWithStatus(http.StatusInternalServerError)
-			c.Error(err)
-		*/
-		c.AbortWithError(http.StatusInternalServerError, err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 	// User should be deleted
 	if toDelete {
-		/*
-			c.AbortWithStatus(http.StatusUnauthorized)
-			c.Error(errors.New("your account will be deleted"))
-		*/
-		c.AbortWithError(http.StatusUnauthorized, errors.New("your account will be deleted"))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "your account will be deleted"})
 		return
 	}
 	c.Next()
