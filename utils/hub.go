@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"jsfraz/whisper-server/models"
+	"log"
 	"slices"
 	"sync"
 
+	messaging "firebase.google.com/go/v4/messaging"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 )
@@ -59,9 +61,7 @@ func (h *Hub) Run() {
 		// Handle connection unregistration
 		case conn := <-h.Unregister:
 			h.mu.Lock()
-			if _, ok := h.Connections[conn]; ok {
-				delete(h.Connections, conn)
-			}
+			delete(h.Connections, conn)
 			h.mu.Unlock()
 
 		// Handle incoming message
@@ -126,6 +126,12 @@ func (h *Hub) Run() {
 				if !online {
 					// Push message to Valkey
 					h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
+
+					// Send push notification
+					err = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message from "+fmt.Sprint(msgSenderPair.SenderId))
+					if err != nil {
+						log.Println(err)
+					}
 				}
 			}
 
@@ -227,4 +233,31 @@ func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
 		}
 	}
 	return online
+}
+
+// SendPushNotification
+//
+//	@param userId
+//	@param title
+//	@param body
+//	@return error
+func (h *Hub) SendPushNotification(userId uint64, title, body string) error {
+	client := GetSingleton().ValkeyFirebase
+	// Get token by userId
+	token, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("%d", userId)).Build()).AsBytes()
+	if err != nil {
+		return fmt.Errorf("failed to get token for user %d: %w", userId, err)
+	}
+	// Send push notification
+	_, err = GetSingleton().FirebaseMsg.Send(context.Background(), &messaging.Message{
+		Notification: &messaging.Notification{
+			Title: title,
+			Body:  body,
+		},
+		Token: string(token),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send push notification to user %d: %w", userId, err)
+	}
+	return nil
 }

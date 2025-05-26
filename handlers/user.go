@@ -22,10 +22,10 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 	// Check if user is admin
 	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get users"))
 	}
 	// Get users
 	users, err := database.GetAllUsersExceptUser(userId.(uint64))
@@ -45,10 +45,10 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	// Check if user is admin
 	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to delete users"))
 	}
 	// Check if user is deleting self
 	if slices.Contains(request.Ids, userId.(uint64)) {
@@ -56,15 +56,18 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	}
 	// Check if user is already in list
 	toDelete, err := database.GetAllUsersToDelete()
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	for _, userId := range request.Ids {
 		if slices.Contains(toDelete, userId) {
-			return c.AbortWithError(http.StatusInternalServerError, errors.New(fmt.Sprintf("user %d is already in delete list", userId)))
+			return c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("user %d is already in delete list", userId))
 		}
 	}
 	// Push delete to Valkey
 	err = database.PushUsersToDelete(request.Ids)
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Delete messages from Valkey
 	for _, userId := range request.Ids {
@@ -106,7 +109,7 @@ func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, 
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !exists {
-		return nil, c.AbortWithError(http.StatusNotFound, err)
+		return nil, c.AbortWithError(http.StatusNotFound, fmt.Errorf("user with id %d not found", request.Id))
 	}
 	// Get user
 	user, err := database.GetUserById(request.Id)

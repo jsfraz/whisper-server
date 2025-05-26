@@ -34,10 +34,17 @@ func InitValkey() {
 		log.Panicln(err)
 	}
 
+	// Valkey for Firebase tokens
+	valkeyFirebase, err := valkey.NewClient(getValkeyClientOptions(4))
+	if err != nil {
+		log.Panicln(err)
+	}
+
 	utils.GetSingleton().ValkeyInvite = valkeyInvite
 	utils.GetSingleton().ValkeyWs = valkeyWs
 	utils.GetSingleton().ValkeyMessage = valkeyMessage
 	utils.GetSingleton().ValkeyDelUser = valkeyUserDel
+	utils.GetSingleton().ValkeyFirebase = valkeyFirebase
 }
 
 // Return Valkey clien options.

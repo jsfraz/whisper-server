@@ -5,6 +5,7 @@ package utils
 import (
 	"fmt"
 
+	messaging "firebase.google.com/go/v4/messaging"
 	"github.com/valkey-io/valkey-go"
 	"gorm.io/gorm"
 )
@@ -14,13 +15,15 @@ var (
 )
 
 type Singleton struct {
-	Config        Config
-	Postgres      gorm.DB
-	ValkeyInvite  valkey.Client
-	ValkeyWs      valkey.Client
-	ValkeyMessage valkey.Client
-	ValkeyDelUser valkey.Client
-	Hub           *Hub
+	Config         Config
+	Postgres       gorm.DB
+	ValkeyInvite   valkey.Client
+	ValkeyWs       valkey.Client
+	ValkeyMessage  valkey.Client
+	ValkeyDelUser  valkey.Client
+	ValkeyFirebase valkey.Client
+	FirebaseMsg    *messaging.Client
+	Hub            *Hub
 }
 
 // Gets Singleton instance

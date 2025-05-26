@@ -90,6 +90,8 @@ func NewRouter() (*fizz.Fizz, error) {
 	UserRoute(grp)
 	InviteRoute(grp)
 	WsAuthRoute(grp)
+	FirebaseRoute(grp)
+
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())
 	}

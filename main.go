@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"jsfraz/whisper-server/database"
@@ -8,6 +9,8 @@ import (
 	"jsfraz/whisper-server/utils"
 	"log"
 	"net/http"
+
+	firebase "firebase.google.com/go/v4"
 )
 
 const addr = "0.0.0.0:8080"
@@ -33,6 +36,17 @@ func main() {
 	database.InitPostgres()
 	// Setup Valkey
 	database.InitValkey()
+
+	// Initialize Firebase app
+	firebaseApp, err := firebase.NewApp(context.Background(), nil)
+	if err != nil {
+		log.Panicln(fmt.Errorf("failed to initialize Firebase: %v", err))
+	}
+	firebaseMsg, err := firebaseApp.Messaging(context.Background())
+	if err != nil {
+		log.Panicln(fmt.Errorf("failed to initialize Firebase Messaging: %v", err))
+	}
+	singleton.FirebaseMsg = firebaseMsg
 
 	// Initialize Hub
 	singleton.Hub = utils.NewHub()

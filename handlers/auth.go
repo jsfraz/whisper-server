@@ -31,6 +31,9 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 	}
 	// Check if username is taken
 	taken, err := database.UserExistsByUsername(request.Username)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	if taken {
 		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
 	}

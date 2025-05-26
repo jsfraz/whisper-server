@@ -1,5 +1,3 @@
 __debug_bin*
 .env.dev
-openapi.json
-asyncapi.yaml
-example/
+*.json
