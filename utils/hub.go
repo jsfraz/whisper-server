@@ -115,11 +115,12 @@ func (h *Hub) Run() {
 				}
 				// Send message to connected client with receiverId
 				online := false
-				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt)
+				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt, false)
 				for conn := range h.Connections {
 					if conn.UserId == privateMessage.ReceiverId {
-						conn.Send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
 						online = true
+						pm.RecipientOnline = true
+						conn.Send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
 						break
 					}
 				}
@@ -128,6 +129,7 @@ func (h *Hub) Run() {
 					h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
 
 					// Send push notification
+					// TODO change notification text to somethin i18n
 					err = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message from "+fmt.Sprint(msgSenderPair.SenderId))
 					if err != nil {
 						log.Println(err)
