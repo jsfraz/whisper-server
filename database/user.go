@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"slices"
@@ -184,7 +185,34 @@ func PushUsersToDelete(ids []uint64) error {
 			return err
 		}
 	}
-	// TODO
+	// Delete messages for these users
+	msgClient := utils.GetSingleton().ValkeyMessage
+	for _, userId := range ids {
+		// Use SCAN to find keys matching pattern
+		pattern := fmt.Sprintf("%d_*", userId)
+		keys := []string{}
+
+		// Scan for matching keys
+		iter := msgClient.B().Scan().Cursor(0).Match(pattern).Count(100).Build()
+		for {
+			result, err := msgClient.Do(context.Background(), iter).AsScanEntry()
+			if err != nil {
+				return err
+			}
+			keys = append(keys, result.Elements...)
+			if result.Cursor == 0 {
+				break
+			}
+			iter = msgClient.B().Scan().Cursor(result.Cursor).Match(pattern).Count(100).Build()
+		}
+
+		// Delete found keys in batches
+		if len(keys) > 0 {
+			if err := msgClient.Do(context.Background(), msgClient.B().Del().Key(keys...).Build()).Error(); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
