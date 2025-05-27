@@ -79,7 +79,6 @@ func NewRouter() (*fizz.Fizz, error) {
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
 
-	// TODO single use token for websocket auth
 	// WebSocket handler
 	engine.GET("/ws", handlers.WebSocketHandler)
 
