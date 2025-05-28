@@ -20,17 +20,20 @@ func AuthMiddleware(c *gin.Context) {
 	// Invalid token
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
 	// Check if user exists
 	exists, err := database.UserExistsById(userId)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 	// User does not exist.
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user does not exist"})
+		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
 	// Token is valid, set it to context and continue

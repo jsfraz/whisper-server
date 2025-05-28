@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"jsfraz/whisper-server/models"
-	"log"
 	"slices"
 	"sync"
 
@@ -130,9 +129,9 @@ func (h *Hub) Run() {
 
 					// Send push notification
 					// TODO change notification text to somethin i18n
-					err = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message from "+fmt.Sprint(msgSenderPair.SenderId))
+					_ = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message from "+fmt.Sprint(msgSenderPair.SenderId))
 					if err != nil {
-						log.Println(err)
+						// log.Println(err)
 					}
 				}
 			}

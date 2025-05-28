@@ -15,12 +15,14 @@ func UserDeletionMiddleware(c *gin.Context) {
 	// Check if user is in delete list
 	toDelete, err := database.WillUserBeDeleted(userId.(uint64))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 	// User should be deleted
 	if toDelete {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "your account will be deleted"})
+		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
 	c.Next()

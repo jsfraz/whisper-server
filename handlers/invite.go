@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/pkg/errors"
 )
 
 // CreateInvite
