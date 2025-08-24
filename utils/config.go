@@ -15,13 +15,6 @@ type Config struct {
 	// Server URL
 	ServerUrl string `envconfig:"SERVER_URL" required:"true"`
 
-	// PostgreSQL
-	PostgresUser     string `envconfig:"POSTGRES_USER" required:"true"`
-	PostgresPassword string `envconfig:"POSTGRES_PASSWORD" required:"true"`
-	PostgresHost     string `envconfig:"POSTGRES_HOST" required:"true"`
-	PostgresPort     int    `envconfig:"POSTGRES_PORT" default:"5432"` // Default 5432
-	PostgresDb       string `envconfig:"POSTGRES_DB" required:"true"`
-
 	// Valkey
 	ValkeyHost     string `envconfig:"VALKEY_HOST" required:"true"`
 	ValkeyPort     int    `envconfig:"VALKEY_PORT" default:"6379"` // Default 6379

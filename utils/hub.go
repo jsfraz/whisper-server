@@ -163,7 +163,7 @@ func (h *Hub) sendError(senderId uint64, err error) {
 //	@return error
 func (h *Hub) userExistsById(userId uint64) (bool, error) {
 	var count int64
-	err := GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
+	err := GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -223,7 +223,7 @@ func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
 		// Find online user
 		if slices.Contains(ids, conn.UserId) {
 			// Delete user
-			err := GetSingleton().Postgres.Where("id = ?", conn.UserId).Delete(&models.User{}).Error
+			err := GetSingleton().Sqlite.Where("id = ?", conn.UserId).Delete(&models.User{}).Error
 			if err != nil {
 				continue
 			}

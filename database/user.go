@@ -16,7 +16,7 @@ import (
 //	@return error
 func UserExistsByUsername(username string) (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
+	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -29,7 +29,7 @@ func UserExistsByUsername(username string) (bool, error) {
 //	@param inviteCode
 //	@return error
 func InsertUser(user *models.User, inviteCode string) error {
-	tx := utils.GetSingleton().Postgres.Begin()
+	tx := utils.GetSingleton().Sqlite.Begin()
 	err := tx.Create(&user).Error
 	if err != nil {
 		tx.Rollback()
@@ -50,7 +50,7 @@ func InsertUser(user *models.User, inviteCode string) error {
 //	@return error
 func AdminExists() (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
+	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -64,7 +64,7 @@ func AdminExists() (bool, error) {
 //	@return error
 func UserExistsById(userId uint64) (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
+	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -83,9 +83,9 @@ func GetUserById(userId uint64) (*models.User, error) {
 	}
 	var user models.User
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Postgres.Where("id = ? AND id NOT IN ?", userId, toDelete).First(&user).Error
+		err = utils.GetSingleton().Sqlite.Where("id = ? AND id NOT IN ?", userId, toDelete).First(&user).Error
 	} else {
-		err = utils.GetSingleton().Postgres.Where("id = ?", userId).First(&user).Error
+		err = utils.GetSingleton().Sqlite.Where("id = ?", userId).First(&user).Error
 	}
 	if err != nil {
 		return nil, err
@@ -105,9 +105,9 @@ func GetAllUsersExceptUser(userId uint64) (*[]models.User, error) {
 	}
 	var users []models.User = []models.User{}
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Postgres.Where("id != ? AND id NOT IN ?", userId, toDelete).Find(&users).Error
+		err = utils.GetSingleton().Sqlite.Where("id != ? AND id NOT IN ?", userId, toDelete).Find(&users).Error
 	} else {
-		err = utils.GetSingleton().Postgres.Where("id != ?", userId).Find(&users).Error
+		err = utils.GetSingleton().Sqlite.Where("id != ?", userId).Find(&users).Error
 	}
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func GetAllUsersExceptUser(userId uint64) (*[]models.User, error) {
 //	@param userId
 //	@return error
 func DeleteUserById(userId uint64) error {
-	return utils.GetSingleton().Postgres.Where("id = ?", userId).Delete(&models.User{}).Error
+	return utils.GetSingleton().Sqlite.Where("id = ?", userId).Delete(&models.User{}).Error
 }
 
 // Checks if user with given ID is admin.
@@ -130,7 +130,7 @@ func DeleteUserById(userId uint64) error {
 //	@return error
 func IsAdmin(userId uint64) (bool, error) {
 	var isAdmin bool
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
+	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
 	if err != nil {
 		return false, err
 	}
@@ -144,7 +144,7 @@ func IsAdmin(userId uint64) (bool, error) {
 //	@return error
 func GetUserPublicKey(userId uint64) (string, error) {
 	var publicKey string
-	err := utils.GetSingleton().Postgres.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
+	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
 	if err != nil {
 		return "", err
 	}
@@ -164,9 +164,9 @@ func SearchUsersByUsername(username string, userId uint64) (*[]models.User, erro
 	}
 	var users []models.User
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Postgres.Where("username LIKE ? AND id != ? AND id NOT IN ?", "%"+username+"%", userId, toDelete).Find(&users).Error
+		err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ? AND id NOT IN ?", "%"+username+"%", userId, toDelete).Find(&users).Error
 	} else {
-		err = utils.GetSingleton().Postgres.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
+		err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
 	}
 	if err != nil {
 		return nil, err

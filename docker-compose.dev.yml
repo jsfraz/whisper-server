@@ -2,20 +2,6 @@ name: whisper-server
 
 services:
   
-  whisper-postgres:
-    image: postgres:17-alpine
-    container_name: whisper-postgres
-    env_file: .env.dev
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    ports:
-      - 127.0.0.1:${POSTGRES_PORT}:5432
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: always
-  
   whisper-valkey:
     image: valkey/valkey:latest
     container_name: whisper-valkey
@@ -28,5 +14,4 @@ services:
       - valkey_data:/data
 
 volumes:
-  postgres_data:
   valkey_data:

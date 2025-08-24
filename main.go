@@ -32,8 +32,8 @@ func main() {
 	}
 	singleton.Config = *config
 
-	// Setup PostgreSQL
-	database.InitPostgres()
+	// Setup SQLite
+	database.InitSqlite()
 	// Setup Valkey
 	database.InitValkey()
 
@@ -68,12 +68,6 @@ func main() {
 			log.Panicln(err)
 		}
 	}()
-
-	// Create PostgreSQL triggers
-	database.CreatePostgresTriggers("./sqlScripts/create_user_trigger.sql")
-	if err != nil {
-		log.Panicln(err)
-	}
 
 	// Send mail on new invite creation
 	go func() {

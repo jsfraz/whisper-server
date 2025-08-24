@@ -8,6 +8,7 @@
         "lijunawk.vscodegocomment",
         "uniquevision.vscode-plpgsql-lsp",
         "arjun.swagger-viewer",
-        "wakatime.vscode-wakatime"
+        "wakatime.vscode-wakatime",
+        "eamodio.gitlens"
     ]
 }

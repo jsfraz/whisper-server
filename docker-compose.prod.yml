@@ -15,10 +15,6 @@ services:
        - /etc/localtime:/etc/localtime:ro
     environment:
       - GIN_MODE=${GIN_MODE}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_HOST=whisper-postgres
-      - POSTGRES_DB=${POSTGRES_DB}
       - VALKEY_HOST=whisper-valkey
       - VALKEY_PASSWORD=${VALKEY_PASSWORD}
       - ADMIN_MAIL=${ADMIN_MAIL}
@@ -26,18 +22,6 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
-  
-  whisper-postgres:
-    image: postgres:alpine
-    container_name: whisper-postgres
-    env_file: .env.prod
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: always
   
   whisper-valkey:
     image: valkey/valkey:latest
@@ -49,5 +33,4 @@ services:
       - valkey_data:/data
 
 volumes:
-  postgres_data:
   valkey_data:
