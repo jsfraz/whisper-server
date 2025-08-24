@@ -3,13 +3,13 @@ name: whisper-server
 services:
   
   whisper-postgres:
-    image: postgres:alpine
+    image: postgres:17-alpine
     container_name: whisper-postgres
     env_file: .env.dev
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}¨
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
       - 127.0.0.1:${POSTGRES_PORT}:5432
     volumes:
