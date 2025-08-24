@@ -118,3 +118,37 @@ func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, 
 	}
 	return user, nil
 }
+
+// Delete current user.
+//
+//	@param c
+//	@return error
+func DeleteMe(c *gin.Context) error {
+	userId, _ := c.Get("userId")
+	// Check if user is admin
+	admin, err := database.IsAdmin(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Delete user
+	err = database.DeleteUserById(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	// Send admin invite
+	if admin {
+		err = database.CreateAdminInvite()
+		if err != nil {
+			return c.AbortWithError(http.StatusInternalServerError, err)
+		}
+	}
+
+	// Delete users and messages for him
+	database.DeleteUserPrivateMessages(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	return nil
+}

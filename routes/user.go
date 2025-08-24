@@ -74,4 +74,18 @@ func UserRoute(g *fizz.RouterGroup) {
 			true),
 		tonic.Handler(handlers.GetUserById, http.StatusOK),
 	)
+
+	// Delete user
+	grp.DELETE("me",
+		utils.CreateOperationOption(
+			"Delete my account",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.DeleteMe, http.StatusNoContent),
+	)
 }

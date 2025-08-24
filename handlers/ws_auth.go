@@ -23,7 +23,7 @@ func WebSocketAuth(c *gin.Context) (*models.WsAuthResponse, error) {
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Insert token to Redis
+	// Insert token to Valkey
 	err = database.PushWsAccessToken(tokenId, accessToken, utils.GetSingleton().Config.WsTokenLifespan)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)

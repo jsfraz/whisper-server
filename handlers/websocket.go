@@ -32,7 +32,7 @@ func WebSocketHandler(c *gin.Context) {
 		// log.Println(err.Error())
 		return
 	}
-	// Check if token exists in Redis
+	// Check if token exists in Valkey
 	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -45,7 +45,7 @@ func WebSocketHandler(c *gin.Context) {
 		// log.Println(err.Error())
 		return
 	}
-	// Check if provided token and token from Redis are the same
+	// Check if provided token and token from Valkey are the same
 	if accessToken != accessTokenById {
 		err = errors.New("access token mismatch")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
