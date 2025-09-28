@@ -1,18 +1,21 @@
 package database
 
 import (
+	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"log"
 
-	"gorm.io/driver/sqlite"
+	sqliteEncrypt "github.com/ShaoQ1ang/gorm-sqlite-cipher"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 // Initializes database or panics.
 func InitSqlite() {
-	sqlite, err := gorm.Open(sqlite.Open("whisper.db"), &gorm.Config{Logger: logger.Default.LogMode(GetGormLogLevel())})
+	dbpath := "data/whisper.sqlite"
+	dbnameWithDSN := dbpath + fmt.Sprintf("?_pragma_key=%s&_pragma_cipher_page_size=4096", utils.GetSingleton().Config.SqlitePassword)
+	sqlite, err := gorm.Open(sqliteEncrypt.Open(dbnameWithDSN), &gorm.Config{Logger: logger.Default.LogMode(GetGormLogLevel())})
 	if err != nil {
 		log.Panicln(err)
 	}

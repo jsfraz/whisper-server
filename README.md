@@ -6,6 +6,8 @@ For Whisper app, see [whisper](https://github.com/jsfraz/whisper) repository.
 
 ## Deployment
 
+### TODO Environment variables
+
 ```bash
 sudo docker compose -f docker-compose.dev.yml --env-file .env.dev up -d
 ```

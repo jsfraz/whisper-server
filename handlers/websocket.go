@@ -26,7 +26,7 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 	// Validate access token
-	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsTokenSecret)
+	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		// log.Println(err.Error())

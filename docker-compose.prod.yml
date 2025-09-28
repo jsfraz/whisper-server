@@ -1,32 +1,37 @@
-name: whisper-server
+name: whisper
 
 services:
 
   whisper-server:
     container_name: whisper-server
-    env_file: .env.prod
-    build:
-      context: .
-    network_mode: bridge
+    build: .
+    image: whisper-server
     restart: always
     ports:
        - "127.0.0.1:8080:8080"
     volumes:
        - /etc/localtime:/etc/localtime:ro
+       - whisper_data:/app/data
+       - ./data/firebase.json:/app/data/firebase.json
+    depends_on:
+      - whisper-valkey
     environment:
-      - GIN_MODE=${GIN_MODE}
+      - GIN_MODE=release
+      - SERVER_URL=${SERVER_URL}
+      - SQLITE_PASSWORD=${SQLITE_PASSWORD}
       - VALKEY_HOST=whisper-valkey
       - VALKEY_PASSWORD=${VALKEY_PASSWORD}
       - ADMIN_MAIL=${ADMIN_MAIL}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
+      - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
   whisper-valkey:
     image: valkey/valkey:latest
     container_name: whisper-valkey
-    env_file: .env.prod
     restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
     volumes:
@@ -34,3 +39,4 @@ services:
 
 volumes:
   valkey_data:
+  whisper_data:

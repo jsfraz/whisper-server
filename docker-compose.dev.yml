@@ -1,11 +1,10 @@
-name: whisper-server
+name: whisper-dev
 
 services:
   
   whisper-valkey:
     image: valkey/valkey:latest
-    container_name: whisper-valkey
-    env_file: .env.dev
+    container_name: whisper-valkey-dev
     restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
     ports:

@@ -19,12 +19,12 @@ func WebSocketAuth(c *gin.Context) (*models.WsAuthResponse, error) {
 	userId, _ := c.Get("userId")
 	// Generate access token
 	tokenId := uuid.New().String()
-	accessToken, err := utils.GenerateToken(userId.(uint64), utils.GetSingleton().Config.WsTokenLifespan, utils.GetSingleton().Config.WsTokenSecret, &tokenId)
+	accessToken, err := utils.GenerateToken(userId.(uint64), utils.GetSingleton().Config.WsAccessTokenLifespan, utils.GetSingleton().Config.WsAccessTokenSecret, &tokenId)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Insert token to Valkey
-	err = database.PushWsAccessToken(tokenId, accessToken, utils.GetSingleton().Config.WsTokenLifespan)
+	err = database.PushWsAccessToken(tokenId, accessToken, utils.GetSingleton().Config.WsAccessTokenLifespan)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
