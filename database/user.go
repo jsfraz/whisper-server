@@ -163,10 +163,24 @@ func SearchUsersByUsername(username string, userId uint64) (*[]models.User, erro
 		return nil, err
 	}
 	var users []models.User
+
+	skipUser := true
+	if utils.GetSingleton().Config.GinMode != "release" {
+		skipUser = false
+	}
+
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ? AND id NOT IN ?", "%"+username+"%", userId, toDelete).Find(&users).Error
+		if skipUser {
+			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ? AND id NOT IN ?", "%"+username+"%", userId, toDelete).Find(&users).Error
+		} else {
+			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id NOT IN ?", "%"+username+"%", toDelete).Find(&users).Error
+		}
 	} else {
-		err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
+		if skipUser {
+			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
+		} else {
+			err = utils.GetSingleton().Sqlite.Where("username LIKE ?", "%"+username+"%").Find(&users).Error
+		}
 	}
 	if err != nil {
 		return nil, err

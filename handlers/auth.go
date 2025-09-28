@@ -68,9 +68,9 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// User does not exist
+	// Current user does not exist
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
 	}
 	// Get user public key
 	publicKeyPem, err := database.GetUserPublicKey(userId)
@@ -116,9 +116,9 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// User does not exist
+	// Current user does not exist
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
 	}
 	// Generate access token
 	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)

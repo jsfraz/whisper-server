@@ -85,8 +85,8 @@ func (h *Hub) Run() {
 					h.sendError(msgSenderPair.SenderId, err)
 					continue
 				}
-				// Check wheteher user is sending message to self
-				if msgSenderPair.SenderId == privateMessage.ReceiverId {
+				// Check wheteher user is sending message to self (in production)
+				if msgSenderPair.SenderId == privateMessage.ReceiverId && GetSingleton().Config.GinMode == "release" {
 					err = errors.New("can not send message to self")
 					h.sendError(msgSenderPair.SenderId, err)
 					continue
@@ -114,7 +114,7 @@ func (h *Hub) Run() {
 				}
 				// Send message to connected client with receiverId
 				online := false
-				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Message, privateMessage.SentAt, false)
+				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Content, privateMessage.Key, privateMessage.Nonce, privateMessage.Mac, privateMessage.SentAt, false)
 				for conn := range h.Connections {
 					if conn.UserId == privateMessage.ReceiverId {
 						online = true
@@ -129,7 +129,7 @@ func (h *Hub) Run() {
 
 					// Send push notification
 					// TODO change notification text to somethin i18n
-					_ = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message from "+fmt.Sprint(msgSenderPair.SenderId))
+					_ = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message")
 					if err != nil {
 						// log.Println(err)
 					}

@@ -30,9 +30,9 @@ func AuthMiddleware(c *gin.Context) {
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	// User does not exist.
+	// Current user does not exist
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "user does not exist"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "current user does not exist"})
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
