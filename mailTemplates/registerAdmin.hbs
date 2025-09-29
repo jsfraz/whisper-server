@@ -8,22 +8,22 @@
 
 <body style="background-color: #f0f9ff; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px;">
   <div style="margin: 0 auto; max-width: 600px; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-    <!-- Header s gradientem -->
+    <!-- Header with gradient -->
     <div style="height: 6px; background-image: linear-gradient(to right, #3b82f6, #1e40af); border-radius: 8px 8px 0 0;"></div>
 
-    <!-- Logo a nadpis -->
+    <!-- Logo and title -->
     <div style="padding: 2rem 0 1rem; text-align: center;">
       <h1 style="font-size: 24px; font-weight: 700; color: #1e40af; margin: 0;">Admin Registration</h1>
     </div>
 
-    <!-- Hlavní obsah -->
+    <!-- Main content -->
     <div style="padding: 1.5rem 2rem;">
       <p style="margin: 0 0 1.5rem; color: #374151; line-height: 1.6;">
         Scan the QR code below in the <a style="color: #3b82f6; font-weight: 500; text-decoration: none;" href="https://github.com/jsfraz/whisper">Whisper app</a> to create your admin account.
       </p>
       
-      <!-- QR kód v kontejneru -->
-      <div style="background-color: #f8fafc; padding: 1.5rem; border-radius: 6px; text-align: center; margin: 1.5rem 0;">
+      <!-- QR code in container -->
+      <div style="padding: 1.5rem; border-radius: 6px; text-align: center; margin: 1.5rem 0;">
         <img style="height: 160px; width: auto;" src="data:image/png;base64,{{ qrBase64 }}">
       </div>
 
@@ -32,7 +32,7 @@
       </p>
     </div>
 
-    <!-- Patička -->
+    <!-- Footer -->
     <div style="padding: 1rem; background-color: #1e40af; color: #ffffff; text-align: center; border-radius: 0 0 8px 8px;">
       <p style="font-size: 0.875rem; margin: 0;">{{ footer }}</p>
     </div>
