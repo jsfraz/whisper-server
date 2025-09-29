@@ -62,27 +62,21 @@ func NewRouter() (*fizz.Fizz, error) {
 				URL:         "http://localhost:8080",
 			},
 		})
-		// TODO more info
 		infos := &openapi.Info{
 			Title:       "Whisper server",
 			Description: "Secure private self-hosted end-to-end encryption messaging server.",
 			Version:     "1.0.0",
-			// TODO license
 			Contact: &openapi.Contact{
 				Name:  "Josef Ráž",
 				URL:   "https://josefraz.cz",
 				Email: "razj@josefraz.cz",
 			},
-			// TODO ToS
-			// TODO XLogo
 		}
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
 
 	// WebSocket handler
 	engine.GET("/ws", handlers.WebSocketHandler)
-
-	// TODO detailed description
 
 	// Setup other routes
 	AuthRoute(grp)
