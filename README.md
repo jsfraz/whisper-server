@@ -51,7 +51,7 @@ The application uses GitHub Actions to automatically build and deploy when pushi
 | VPS_USERNAME | Username for SSH access |
 | VPS_SSH_KEY | Private SSH key for server access |
 | VPS_PORT | SSH port (usually 22) |
-| PROJECT_PATH | Absolute path to the project on the VPS server |
+| PROJECT_PATH | Absolute path to the directory to clone the project to on the VPS server |
 | FIREBASE_JSON_BASE64 | Contents of the firebase.json file encoded in base64 |
 
 And other variables listed in [Environment variables](#environment-variables).
