@@ -33,7 +33,7 @@ jobs:
             export ACTUAL_PATH="${{ secrets.PROJECT_PATH }}/whisper-server"
             if [ -d "$ACTUAL_PATH/.git" ]; then
               echo "Git repository exists, updating repository..."
-              cd ${{ ACTUAL_PATH }}
+              cd $ACTUAL_PATH
               git pull origin main
             else
               echo "Git repository doesn't exist, setting up from scratch..."
