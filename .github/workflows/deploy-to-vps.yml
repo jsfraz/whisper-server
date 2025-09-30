@@ -31,15 +31,15 @@ jobs:
           script: |
             # Check if project directory exists and if it's a git repository
             export ACTUAL_PATH="${{ secrets.PROJECT_PATH }}/whisper-server"
-            if [ -d "${{ ACTUAL_PATH }}/.git" ]; then
+            if [ -d "$ACTUAL_PATH/.git" ]; then
               echo "Git repository exists, updating repository..."
               cd ${{ ACTUAL_PATH }}
               git pull origin main
             else
               echo "Git repository doesn't exist, setting up from scratch..."
               # Create PROJECT_PATH if it doesn't exist
-              mkdir -p "${{ ACTUAL_PATH }}"
-              cd "${{ ACTUAL_PATH }}"
+              mkdir -p "$ACTUAL_PATH"
+              cd "$ACTUAL_PATH"
               
               # Initialize as git repository and set remote
               git init
@@ -63,11 +63,11 @@ jobs:
           script_stop: true  # Stops executing further commands in case of error
           script: |
             export ACTUAL_PATH="${{ secrets.PROJECT_PATH }}/whisper-server"
-            cd "${{ ACTUAL_PATH }}"
+            cd "$ACTUAL_PATH"
             
             # Check if docker-compose.prod.yml exists (sanity check)
             if [ ! -f docker-compose.prod.yml ]; then
-              echo "Error: docker-compose.prod.yml not found in ${{ ACTUAL_PATH }}"
+              echo "Error: docker-compose.prod.yml not found in $ACTUAL_PATH"
               echo "Current directory contents:"
               ls -la
               exit 1
