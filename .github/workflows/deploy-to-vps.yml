@@ -18,27 +18,6 @@ jobs:
         with:
           fetch-depth: 0  # Download full history for potential change comparisons
 
-      - name: Create .env.prod file
-        run: |
-          # Create a temporary .env.prod file
-          cat > .env.prod << EOL
-          SERVER_URL=${{ secrets.SERVER_URL }}
-          SQLITE_PASSWORD=${{ secrets.SQLITE_PASSWORD }}
-          VALKEY_PASSWORD=${{ secrets.VALKEY_PASSWORD }}
-          ADMIN_MAIL=${{ secrets.ADMIN_MAIL }}
-          SMTP_HOST=${{ secrets.SMTP_HOST }}
-          SMTP_USER=${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-          ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}
-          REFRESH_TOKEN_SECRET=${{ secrets.REFRESH_TOKEN_SECRET }}
-          WS_ACCESS_TOKEN_SECRET=${{ secrets.WS_ACCESS_TOKEN_SECRET }}
-          EOL
-
-      - name: Create Firebase JSON config
-        run: |
-          # Decoding Firebase JSON from base64 format
-          echo "${{ secrets.FIREBASE_JSON_BASE64 }}" | base64 --decode > firebase.json
-
       - name: Setup SSH and Deploy
         uses: appleboy/ssh-action@master
         with:
@@ -50,26 +29,20 @@ jobs:
           envs: GITHUB_SHA
           script_stop: true  # Stop executing further commands on error
           script: |
-            # Change to the project directory
-            cd ${{ secrets.PROJECT_PATH }}
-            
-            echo "Pulling latest changes..."
-            git pull origin main
+            # Check if project directory exists
+            if [ -d "${{ secrets.PROJECT_PATH }}" ]; then
+              echo "Project directory exists, updating repository..."
+              cd ${{ secrets.PROJECT_PATH }}
+              git pull origin main
+            else
+              echo "Project directory doesn't exist, cloning repository..."
+              mkdir -p $(dirname "${{ secrets.PROJECT_PATH }}")
+              git clone https://github.com/jsfraz/whisper-server.git "${{ secrets.PROJECT_PATH }}"
+              cd ${{ secrets.PROJECT_PATH }}
+            fi
             
             echo "Creating data directory if it doesn't exist..."
             mkdir -p data
-          
-      - name: Transfer env and Firebase files
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          source: ".env.prod,firebase.json"
-          target: "${{ secrets.PROJECT_PATH }}"
-          strip_components: 0
-          overwrite: true
       
       - name: Deploy
         uses: appleboy/ssh-action@master
@@ -82,9 +55,24 @@ jobs:
           script: |
             cd ${{ secrets.PROJECT_PATH }}
 
-            # Move Firebase JSON file to the correct location
-            echo "Moving Firebase JSON file to data directory..."
-            mv -f firebase.json data/firebase.json
+            # Create .env.prod file
+            echo "Creating .env.prod file..."
+            cat > .env.prod << EOL
+            SERVER_URL=${{ secrets.SERVER_URL }}
+            SQLITE_PASSWORD=${{ secrets.SQLITE_PASSWORD }}
+            VALKEY_PASSWORD=${{ secrets.VALKEY_PASSWORD }}
+            ADMIN_MAIL=${{ secrets.ADMIN_MAIL }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+            ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}
+            REFRESH_TOKEN_SECRET=${{ secrets.REFRESH_TOKEN_SECRET }}
+            WS_ACCESS_TOKEN_SECRET=${{ secrets.WS_ACCESS_TOKEN_SECRET }}
+            EOL
+
+            # Create Firebase JSON file directly in data directory
+            echo "Creating Firebase JSON file..."
+            echo "${{ secrets.FIREBASE_JSON_BASE64 }}" | base64 --decode > data/firebase.json
 
             # Stop running containers
             echo "Stopping current containers..."
