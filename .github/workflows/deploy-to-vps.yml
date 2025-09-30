@@ -29,16 +29,24 @@ jobs:
           envs: GITHUB_SHA
           script_stop: true  # Stop executing further commands on error
           script: |
-            # Check if project directory exists
-            if [ -d "${{ secrets.PROJECT_PATH }}" ]; then
-              echo "Project directory exists, updating repository..."
+            # Check if project directory exists and if it's a git repository
+            if [ -d "${{ secrets.PROJECT_PATH }}/.git" ]; then
+              echo "Git repository exists, updating repository..."
               cd ${{ secrets.PROJECT_PATH }}
               git pull origin main
             else
-              echo "Project directory doesn't exist, cloning repository..."
-              mkdir -p $(dirname "${{ secrets.PROJECT_PATH }}")
-              git clone https://github.com/jsfraz/whisper-server.git "${{ secrets.PROJECT_PATH }}"
-              cd ${{ secrets.PROJECT_PATH }}
+              echo "Git repository doesn't exist, setting up from scratch..."
+              # Create PROJECT_PATH if it doesn't exist
+              mkdir -p "${{ secrets.PROJECT_PATH }}"
+              cd "${{ secrets.PROJECT_PATH }}"
+              
+              # Initialize as git repository and set remote
+              git init
+              git remote add origin https://github.com/jsfraz/whisper-server.git
+              
+              # Fetch and checkout main branch
+              git fetch origin main
+              git checkout -f -B main origin/main
             fi
             
             echo "Creating data directory if it doesn't exist..."
@@ -53,7 +61,15 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script_stop: true  # Stops executing further commands in case of error
           script: |
-            cd ${{ secrets.PROJECT_PATH }}
+            cd "${{ secrets.PROJECT_PATH }}"
+            
+            # Check if docker-compose.prod.yml exists (sanity check)
+            if [ ! -f docker-compose.prod.yml ]; then
+              echo "Error: docker-compose.prod.yml not found in ${{ secrets.PROJECT_PATH }}"
+              echo "Current directory contents:"
+              ls -la
+              exit 1
+            fi
 
             # Create .env.prod file
             echo "Creating .env.prod file..."
@@ -70,13 +86,23 @@ jobs:
             WS_ACCESS_TOKEN_SECRET=${{ secrets.WS_ACCESS_TOKEN_SECRET }}
             EOL
 
-            # Create Firebase JSON file directly in data directory
+            # Create data directory and Firebase JSON file
+            echo "Creating data directory if it doesn't exist..."
+            mkdir -p data
+            
             echo "Creating Firebase JSON file..."
             echo "${{ secrets.FIREBASE_JSON_BASE64 }}" | base64 --decode > data/firebase.json
+            
+            # Verify files were created
+            echo "Verifying file creation..."
+            if [ ! -f .env.prod ] || [ ! -f data/firebase.json ]; then
+              echo "Error: Required files not created"
+              exit 1
+            fi
 
             # Stop running containers
             echo "Stopping current containers..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod down
+            docker compose -f docker-compose.prod.yml --env-file .env.prod down || echo "No containers to stop"
 
             # Build and start containers
             echo "Building and starting containers..."
@@ -85,8 +111,17 @@ jobs:
             # Wait for the service to start
             echo "Waiting for service to start..."
             sleep 10
+            
+            # Verify containers are running
+            echo "Checking container status..."
+            docker compose -f docker-compose.prod.yml ps
       
       - name: Notify Deployment Status
-        # This step will only run if the previous step fails
-        if: failure()
-        run: echo "Deployment failed! Please check logs for details."
+        # This step will always run to report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "Deployment completed successfully!"
+          else
+            echo "Deployment failed! Please check logs for details."
+          fi
