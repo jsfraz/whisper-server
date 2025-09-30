@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
@@ -20,10 +21,10 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 	// Check if user is admin
 	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to create invites"))
 	}
 	// Create invite
 	ttl := utils.GetSingleton().Config.InviteTtl
@@ -44,10 +45,10 @@ func GetAllInvites(c *gin.Context) (*[]models.Invite, error) {
 	// Check if user is admin
 	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get invites"))
 	}
 	// Get invites
 	invites, err := database.GetAllInvites()

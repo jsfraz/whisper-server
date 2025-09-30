@@ -5,7 +5,7 @@ import (
 	"jsfraz/whisper-server/utils"
 )
 
-// Push WebSocket access token to Redis.
+// Push WebSocket access token to Valkey.
 //
 //	@param tokenId
 //	@param token
@@ -17,7 +17,7 @@ func PushWsAccessToken(tokenId string, token string, ttl int) error {
 	return client.Do(context.Background(), client.B().Set().Key(tokenId).Value(token).ExSeconds(int64(ttl)).Build()).Error()
 }
 
-// Check if WebSocket access token exists in Redis.
+// Check if WebSocket access token exists in Valkey.
 //
 //	@param tokenId
 //	@return error

@@ -31,6 +31,9 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 	}
 	// Check if username is taken
 	taken, err := database.UserExistsByUsername(request.Username)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	if taken {
 		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
 	}
@@ -56,17 +59,21 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 //	@param request
 //	@return error
 func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error) {
-	// Check if user exists
-	exists, err := database.UserExistsById(request.UserId)
+	userId, err := utils.GetUserIdFromToken(request.Token)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// User does not exist
+	// Check if user exists
+	exists, err := database.UserExistsById(userId)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Current user does not exist
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
 	}
 	// Get user public key
-	publicKeyPem, err := database.GetUserPublicKey(request.UserId)
+	publicKeyPem, err := database.GetUserPublicKey(userId)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -74,18 +81,18 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Verify signature
-	err = utils.VerifyRSASignature(publicKey, request.Nonce, request.SignedNonce)
+	// Validate token
+	err = utils.ValidateRsaJwtToken(request.Token, publicKey)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
 	// Generate access token
-	accessToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)
+	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Generate refresh token
-	refreshToken, err := utils.GenerateToken(request.UserId, utils.GetSingleton().Config.RefreshTokenLifespan, utils.GetSingleton().Config.RefreshTokenSecret, nil)
+	refreshToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.RefreshTokenLifespan, utils.GetSingleton().Config.RefreshTokenSecret, nil)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -109,9 +116,9 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// User does not exist
+	// Current user does not exist
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("user does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
 	}
 	// Generate access token
 	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)

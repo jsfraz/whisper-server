@@ -17,18 +17,7 @@ func UserRoute(g *fizz.RouterGroup) {
 
 	grp := g.Group("user", "User", "Operations associated with a user account.")
 	grp.Use(middlewares.AuthMiddleware)
-
-	/*
-		// Who am I
-		grp.GET("whoAmI",
-			utils.CreateOperationOption("Get current user.",
-				[]int{
-					http.StatusBadRequest,
-					http.StatusInternalServerError,
-				}, false),
-			// Handler
-			tonic.Handler(handlers.WhoAmI, 200))
-	*/
+	grp.Use(middlewares.UserDeletionMiddleware)
 
 	// Get all users
 	grp.GET("all",
@@ -69,5 +58,34 @@ func UserRoute(g *fizz.RouterGroup) {
 			},
 			true),
 		tonic.Handler(handlers.SearchUsers, http.StatusOK),
+	)
+
+	// Get user by ID
+	grp.GET("",
+		utils.CreateOperationOption(
+			"Get user by ID",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.GetUserById, http.StatusOK),
+	)
+
+	// Delete user
+	grp.DELETE("me",
+		utils.CreateOperationOption(
+			"Delete my account",
+			"",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.DeleteMe, http.StatusNoContent),
 	)
 }

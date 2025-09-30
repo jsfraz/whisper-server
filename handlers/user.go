@@ -2,31 +2,15 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
+	"jsfraz/whisper-server/utils"
 	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
 )
-
-/*
-// Returns current user.
-//
-//	@param c
-//	@return *models.User
-//	@return error
-func WhoAmI(c *gin.Context) (*models.User, error) {
-	// User ID
-	userId, _ := c.Get("userId")
-	// Get user by ID
-	user, err := database.GetUserById(userId.(uint64))
-	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	return user, nil
-}
-*/
 
 // Get all users except the user.
 //
@@ -38,10 +22,10 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 	// Check if user is admin
 	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get users"))
 	}
 	// Get users
 	users, err := database.GetAllUsersExceptUser(userId.(uint64))
@@ -61,19 +45,39 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	// Check if user is admin
 	admin, err := database.IsAdmin(userId.(uint64))
 	if err != nil {
-		c.AbortWithError(http.StatusInternalServerError, err)
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		c.AbortWithError(http.StatusUnauthorized, err)
+		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to delete users"))
 	}
 	// Check if user is deleting self
 	if slices.Contains(request.Ids, userId.(uint64)) {
 		return c.AbortWithError(http.StatusInternalServerError, errors.New("cannot delete self"))
 	}
-	// Delete
-	err = database.DeleteUsersById(request.Ids)
+	// Check if user is already in list
+	toDelete, err := database.GetAllUsersToDelete()
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	for _, userId := range request.Ids {
+		if slices.Contains(toDelete, userId) {
+			return c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("user %d is already in delete list", userId))
+		}
+	}
+	// Push delete to Valkey
+	err = database.PushUsersToDelete(request.Ids)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Delete messages from Valkey
+	for _, userId := range request.Ids {
+		database.DeleteUserPrivateMessages(userId)
+	}
+	// Send ws message to client
+	onlineIds := utils.GetSingleton().Hub.DeleteUsers(request.Ids)
+	// Delete IDs from Valkey
+	for _, id := range onlineIds {
+		database.RemoveDeletedUserId(id)
 	}
 	return nil
 }
@@ -90,4 +94,61 @@ func SearchUsers(c *gin.Context, request *models.UsernameQuery) (*[]models.User,
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	return users, nil
+}
+
+// Return user by ID.
+//
+//	@param c
+//	@param request
+//	@return *models.User
+//	@return error
+func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, error) {
+	// Check if user exists
+	exists, err := database.UserExistsById(request.Id)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if !exists {
+		return nil, c.AbortWithError(http.StatusNotFound, fmt.Errorf("user with id %d not found", request.Id))
+	}
+	// Get user
+	user, err := database.GetUserById(request.Id)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return user, nil
+}
+
+// Delete current user.
+//
+//	@param c
+//	@return error
+func DeleteMe(c *gin.Context) error {
+	userId, _ := c.Get("userId")
+	// Check if user is admin
+	admin, err := database.IsAdmin(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Delete user
+	err = database.DeleteUserById(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	// Send admin invite
+	if admin {
+		err = database.CreateAdminInvite()
+		if err != nil {
+			return c.AbortWithError(http.StatusInternalServerError, err)
+		}
+	}
+
+	// Delete users and messages for him
+	database.DeleteUserPrivateMessages(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	return nil
 }

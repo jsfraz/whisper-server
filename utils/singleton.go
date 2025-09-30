@@ -3,8 +3,7 @@ package utils
 // https://dev.to/kittipat1413/understanding-the-singleton-pattern-in-go-5h99
 
 import (
-	"fmt"
-
+	messaging "firebase.google.com/go/v4/messaging"
 	"github.com/valkey-io/valkey-go"
 	"gorm.io/gorm"
 )
@@ -14,11 +13,15 @@ var (
 )
 
 type Singleton struct {
-	Config       Config
-	Postgres     gorm.DB
-	ValkeyInvite valkey.Client
-	ValkeyWs     valkey.Client
-	Hub          *Hub
+	Config         Config
+	Sqlite         gorm.DB
+	ValkeyInvite   valkey.Client
+	ValkeyWs       valkey.Client
+	ValkeyMessage  valkey.Client
+	ValkeyDelUser  valkey.Client
+	ValkeyFirebase valkey.Client
+	FirebaseMsg    *messaging.Client
+	Hub            *Hub
 }
 
 // Gets Singleton instance
@@ -29,17 +32,4 @@ func GetSingleton() *Singleton {
 		instance = new(Singleton)
 	}
 	return instance
-}
-
-// Return PostgreSQL connection string
-//
-//	@receiver s
-//	@return string
-func (s Singleton) GetPostgresConnStr() string {
-	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable", // TODO remove sslMode???
-		s.Config.PostgresUser,
-		s.Config.PostgresPassword,
-		s.Config.PostgresHost,
-		s.Config.PostgresPort,
-		s.Config.PostgresDb)
 }

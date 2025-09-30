@@ -1,0 +1,104 @@
+name: Deploy to VPS
+
+# Workflow for automatic deployment of an application to VPS when pushing to the main branch
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Download full history for potential change comparisons
+
+      - name: Create .env.prod file
+        run: |
+          # Create a temporary .env.prod file
+          cat > .env.prod << EOL
+          SERVER_URL=${{ secrets.SERVER_URL }}
+          SQLITE_PASSWORD=${{ secrets.SQLITE_PASSWORD }}
+          VALKEY_PASSWORD=${{ secrets.VALKEY_PASSWORD }}
+          ADMIN_MAIL=${{ secrets.ADMIN_MAIL }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}
+          REFRESH_TOKEN_SECRET=${{ secrets.REFRESH_TOKEN_SECRET }}
+          WS_ACCESS_TOKEN_SECRET=${{ secrets.WS_ACCESS_TOKEN_SECRET }}
+          EOL
+
+      - name: Create Firebase JSON config
+        run: |
+          # Decoding Firebase JSON from base64 format
+          echo "${{ secrets.FIREBASE_JSON_BASE64 }}" | base64 --decode > firebase.json
+
+      - name: Setup SSH and Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          # Upload files to the server
+          envs: GITHUB_SHA
+          script_stop: true  # Stop executing further commands on error
+          script: |
+            # Change to the project directory
+            cd ${{ secrets.PROJECT_PATH }}
+            
+            echo "Pulling latest changes..."
+            git pull origin main
+            
+            echo "Creating data directory if it doesn't exist..."
+            mkdir -p data
+          
+      - name: Transfer env and Firebase files
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: ".env.prod,firebase.json"
+          target: "${{ secrets.PROJECT_PATH }}"
+          strip_components: 0
+          overwrite: true
+      
+      - name: Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script_stop: true  # Stops executing further commands in case of error
+          script: |
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Move Firebase JSON file to the correct location
+            echo "Moving Firebase JSON file to data directory..."
+            mv -f firebase.json data/firebase.json
+
+            # Stop running containers
+            echo "Stopping current containers..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod down
+
+            # Build and start containers
+            echo "Building and starting containers..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+            # Wait for the service to start
+            echo "Waiting for service to start..."
+            sleep 10
+      
+      - name: Notify Deployment Status
+        # This step will only run if the previous step fails
+        if: failure()
+        run: echo "Deployment failed! Please check logs for details."

@@ -26,13 +26,13 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 	// Validate access token
-	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsTokenSecret)
+	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		// log.Println(err.Error())
 		return
 	}
-	// Check if token exists in Redis
+	// Check if token exists in Valkey
 	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -45,7 +45,7 @@ func WebSocketHandler(c *gin.Context) {
 		// log.Println(err.Error())
 		return
 	}
-	// Check if provided token and token from Redis are the same
+	// Check if provided token and token from Valkey are the same
 	if accessToken != accessTokenById {
 		err = errors.New("access token mismatch")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -67,7 +67,6 @@ func WebSocketHandler(c *gin.Context) {
 	// Create new WebSocket connection with topic subscription support
 	conn := &utils.WSConnection{
 		Conn:   ws,
-		Topics: make(map[string]bool),
 		UserId: userId,
 	}
 	// Register new connection with the hub
@@ -80,6 +79,19 @@ func WebSocketHandler(c *gin.Context) {
 			utils.GetSingleton().Hub.Unregister <- conn
 			conn.Conn.Close()
 		}()
+
+		// Check if account should be deleted
+		toDelete, err := checkAccountDeletion(conn)
+		if err != nil {
+			conn.SendError(err)
+		}
+		// Terminates goroutine
+		if toDelete {
+			return
+		}
+
+		// Send messages from cache
+		sendMessagesFromCache(conn)
 
 		// Register custom validators
 		validator := validator.New()
@@ -100,10 +112,7 @@ func WebSocketHandler(c *gin.Context) {
 			// Check message type
 			if messageType != websocket.BinaryMessage {
 				err = errors.New("invalid message type, only binary messages are supported")
-				// log.Println(err)
-				response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-				binaryResponse, _ := models.MarshalWsResponse(response)
-				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				conn.SendError(err)
 				continue
 			}
 
@@ -111,20 +120,14 @@ func WebSocketHandler(c *gin.Context) {
 			var msg models.WsMessage
 			err = json.Unmarshal(payload, &msg)
 			if err != nil {
-				// log.Println(err)
-				response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-				binaryResponse, _ := models.MarshalWsResponse(response)
-				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				conn.SendError(err)
 				continue
 			}
 
 			// Validate message
 			err = validator.Struct(msg)
 			if err != nil {
-				// log.Println(err)
-				response := models.NewWsResponse(models.WsResponseTypeError, err.Error())
-				binaryResponse, _ := models.MarshalWsResponse(response)
-				conn.Conn.WriteMessage(websocket.BinaryMessage, binaryResponse)
+				conn.SendError(err)
 				continue
 			}
 
@@ -138,4 +141,47 @@ func WebSocketHandler(c *gin.Context) {
 			}
 		}
 	}()
+}
+
+// Send messages from cache.
+func sendMessagesFromCache(conn *utils.WSConnection) {
+	// Get messages from cache
+	messages, err := database.GetUserPrivateMessages(conn.UserId)
+	if err != nil {
+		conn.SendError(err)
+		return
+	}
+	// Send messages
+	if len(*messages) > 0 {
+		response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
+		conn.Send(response)
+	}
+}
+
+// Checks if user account should be deleted, sends delete message and deletes user.
+//
+//	@param conn
+//	@return bool
+//	@return error
+func checkAccountDeletion(conn *utils.WSConnection) (bool, error) {
+	toDelete, err := database.WillUserBeDeleted(conn.UserId)
+	if err != nil {
+		return false, err
+	}
+	if toDelete {
+		// Delete user
+		err = database.DeleteUserById(conn.UserId)
+		if err != nil {
+			return toDelete, err
+		}
+		// Send delete message
+		response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
+		conn.Send(response)
+		// Delete ID from Valkey
+		database.RemoveDeletedUserId(conn.UserId)
+		// Delete messages from Valkey
+		database.DeleteUserPrivateMessages(conn.UserId)
+
+	}
+	return toDelete, nil
 }

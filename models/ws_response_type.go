@@ -3,6 +3,7 @@ package models
 type WsResponseType string
 
 const (
-	WsResponseTypeError   WsResponseType = "error"
-	WsResponseTypeMessage WsResponseType = "message"
+	WsResponseTypeError         WsResponseType = "error"
+	WsResponseTypeMessages      WsResponseType = "messages"
+	WsResponseTypeDeleteAccount WsResponseType = "deleteAccount"
 )
