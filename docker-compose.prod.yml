@@ -29,6 +29,7 @@ services:
       - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
       - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
+  # TODO watchtower?
   whisper-valkey:
     image: valkey/valkey:alpine
     container_name: whisper-valkey
