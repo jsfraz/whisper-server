@@ -1,27 +1,36 @@
-# Use the official Golang image as the base image (Debian based)
-FROM golang:1.25.1 AS build
+# Build stage
+FROM golang:1.26.2-alpine AS build
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Installing the necessary tools and libraries for CGO and SQLite
-RUN apt-get update && apt-get install -y gcc libc6-dev
+# Install build dependencies for CGO (SQLCipher)
+RUN apk add --no-cache gcc musl-dev
 
-# Copy the Go mod and sum files to the working directory
+# Download dependencies first (cached layer)
 COPY go.mod go.sum ./
-
-# Download and install dependencies
 RUN go mod download
 
-# Copy the source code into the container
+# Copy source code and build
 COPY . .
+ENV CGO_ENABLED=1
+RUN CGO_CFLAGS="-Doff64_t=off_t -Dpread64=pread -Dpwrite64=pwrite" go build -ldflags="-s -w" -o whisper-server
+
+# Stage
+FROM alpine
+
+# Install only runtime CA certificates
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+# Copy the compiled binary from the build stage
+COPY --from=build /app/whisper-server .
+
+# Copy mail templates needed at runtime
+COPY --from=build /app/mailTemplates ./mailTemplates
 
 # Create a directory for data persistence
 RUN mkdir -p /app/data
-
-# Build the application with CGO
-ENV CGO_ENABLED=1
-RUN go build -o whisper-server
 
 # Expose the port that the application will run on
 EXPOSE 8080
