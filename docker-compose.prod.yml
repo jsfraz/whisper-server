@@ -29,9 +29,8 @@ services:
       - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
       - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
-  # TODO watchtower?
   whisper-valkey:
-    image: valkey/valkey:alpine
+    image: valkey/valkey:9-alpine
     container_name: whisper-valkey
     restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"

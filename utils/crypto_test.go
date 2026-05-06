@@ -9,8 +9,12 @@ import (
 //
 //	@param t
 func TestRandomASCIIString(t *testing.T) {
-	for i := 0; i < 10; i++ {
-		fmt.Println(RandomASCIIString(64))
+	for i := range 10 {
+		randomString, err := RandomASCIIString(64)
+		if err != nil {
+			t.Error(err)
+		}
+		fmt.Println(randomString, i)
 	}
 }
 

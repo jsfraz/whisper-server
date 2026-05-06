@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"jsfraz/whisper-server/models"
+	"log"
 	"slices"
+	"strconv"
 	"sync"
 
 	messaging "firebase.google.com/go/v4/messaging"
@@ -76,6 +78,7 @@ func (h *Hub) Run() {
 				err := json.Unmarshal(msgSenderPair.Message.Payload, &privateMessage)
 				if err != nil {
 					h.sendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
 					continue
 				}
 				// Validate private message
@@ -83,33 +86,39 @@ func (h *Hub) Run() {
 				err = validator.Struct(privateMessage)
 				if err != nil {
 					h.sendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
 					continue
 				}
-				// Check wheteher user is sending message to self (in production)
+				// Check whether user is sending message to self (in production)
 				if msgSenderPair.SenderId == privateMessage.ReceiverId && GetSingleton().Config.GinMode == "release" {
 					err = errors.New("can not send message to self")
 					h.sendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
 					continue
 				}
 				// Check if message is being sent to user that will be deleted
 				toDelete, err := h.willUserBeDeleted(privateMessage.ReceiverId)
 				if err != nil {
 					h.sendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
 					continue
 				}
 				if toDelete {
 					err = errors.New("can not send message to this user")
 					h.sendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
 					continue
 				}
 				// Check if user exists
 				exists, err := h.userExistsById(privateMessage.ReceiverId)
 				if err != nil {
 					h.sendError(msgSenderPair.SenderId, err)
+					h.mu.RUnlock()
 					continue
 				}
 				if !exists {
 					h.sendError(msgSenderPair.SenderId, errors.New("user does not exist"))
+					h.mu.RUnlock()
 					continue
 				}
 				// Send message to connected client with receiverId
@@ -128,10 +137,8 @@ func (h *Hub) Run() {
 					h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
 
 					// Send push notification
-					// TODO change notification text to somethin i18n
-					_ = h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message")
-					if err != nil {
-						// log.Println(err)
+					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
+						log.Printf("failed to send push notification to user %d: %v", privateMessage.ReceiverId, err)
 					}
 				}
 			}
@@ -146,11 +153,9 @@ func (h *Hub) Run() {
 //	@param senderId
 //	@param err
 func (h *Hub) sendError(senderId uint64, err error) {
-	//log.Println(err)
 	for conn := range h.Connections {
 		if conn.UserId == senderId {
 			conn.SendError(err)
-			h.mu.RUnlock()
 			break
 		}
 	}
@@ -183,33 +188,22 @@ func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl 
 		return err
 	}
 	// Push
-	client := GetSingleton().ValkeyMessage
-	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("%d_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
+	client := GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("msg:%d_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
 }
 
-// Check if user with given ID will be deleted.
+// Check if user with given ID will be deleted (O(1) with SET).
 //
 //	@param userId
 //	@return bool
 //	@return error
 func (h *Hub) willUserBeDeleted(userId uint64) (bool, error) {
-	client := GetSingleton().ValkeyDelUser
-	// Check len
-	length, err := client.Do(context.Background(), client.B().Llen().Key("delete").Build()).AsInt64()
+	client := GetSingleton().Valkey
+	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).AsBool()
 	if err != nil {
 		return false, err
 	}
-	// Get all IDs
-	ids, err := client.Do(context.Background(), client.B().Lrange().Key("delete").Start(0).Stop(length).Build()).AsIntSlice()
-	if err != nil {
-		return false, err
-	}
-	result := make([]uint64, len(ids))
-	for i, v := range ids {
-		result[i] = uint64(v)
-	}
-	// Check slice
-	return slices.Contains(result, userId), nil
+	return result, nil
 }
 
 // Deletes users and sends delete message. Returns slice of online users that have been deleted.
@@ -243,9 +237,9 @@ func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
 //	@param body
 //	@return error
 func (h *Hub) SendPushNotification(userId uint64, title, body string) error {
-	client := GetSingleton().ValkeyFirebase
+	client := GetSingleton().Valkey
 	// Get token by userId
-	token, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("%d", userId)).Build()).AsBytes()
+	token, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%d", userId)).Build()).AsBytes()
 	if err != nil {
 		return fmt.Errorf("failed to get token for user %d: %w", userId, err)
 	}

@@ -7,12 +7,27 @@ import (
 	"gopkg.in/gomail.v2"
 )
 
+// Returns a cached SMTP dialer instance from the singleton.
+//
+//	@return *gomail.Dialer
+func GetSmtpDialer() *gomail.Dialer {
+	s := GetSingleton()
+	if s.smtpDialer == nil {
+		s.smtpDialer = gomail.NewDialer(
+			s.Config.SmtpHost,
+			s.Config.SmtpPort,
+			s.Config.SmtpUser,
+			s.Config.SmtpPassword,
+		)
+	}
+	return s.smtpDialer
+}
+
 // Sends mail https://pkg.go.dev/gopkg.in/gomail.v2#example-package
 //
-//	@param mailData
 //	@param to
-//	@param username
-//	@param text2
+//	@param subject
+//	@param content
 //	@return error
 func SendMail(to string, subject, content string) error {
 	// Create message
@@ -22,13 +37,7 @@ func SendMail(to string, subject, content string) error {
 	m.SetHeader("Subject", subject)
 	m.SetBody("text/html", content)
 	// Send mail
-	d := gomail.NewDialer(
-		GetSingleton().Config.SmtpHost,
-		GetSingleton().Config.SmtpPort,
-		GetSingleton().Config.SmtpUser,
-		GetSingleton().Config.SmtpPassword,
-	)
-	return d.DialAndSend(m)
+	return GetSmtpDialer().DialAndSend(m)
 }
 
 // Returns mail footer with time sent.

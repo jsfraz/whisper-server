@@ -2,8 +2,13 @@ package database
 
 import (
 	"context"
+	"errors"
 	"jsfraz/whisper-server/utils"
+
+	"github.com/valkey-io/valkey-go"
 )
+
+var wsValkeyErr *valkey.ValkeyError
 
 // Push WebSocket access token to Valkey.
 //
@@ -12,29 +17,26 @@ import (
 //	@param ttl
 //	@return error
 func PushWsAccessToken(tokenId string, token string, ttl int) error {
-	// Push
-	client := utils.GetSingleton().ValkeyWs
-	return client.Do(context.Background(), client.B().Set().Key(tokenId).Value(token).ExSeconds(int64(ttl)).Build()).Error()
+	// Push with ws: prefix
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Set().Key("ws:"+tokenId).Value(token).ExSeconds(int64(ttl)).Build()).Error()
 }
 
-// Check if WebSocket access token exists in Valkey.
+// Atomically get and delete WebSocket access token from Valkey.
+// Uses GETDEL to prevent race conditions between EXISTS and GET.
 //
 //	@param tokenId
+//	@return bool
+//	@return string
 //	@return error
 func WsAccessTokenExists(tokenId string) (bool, string, error) {
-	client := utils.GetSingleton().ValkeyWs
-	exists, err := client.Do(context.Background(), client.B().Exists().Key(tokenId).Build()).AsBool()
+	client := utils.GetSingleton().Valkey
+	result, err := client.Do(context.Background(), client.B().Getdel().Key("ws:"+tokenId).Build()).AsBytes()
 	if err != nil {
+		if errors.As(err, &wsValkeyErr) {
+			return false, "", nil // Key doesn't exist
+		}
 		return false, "", err
 	}
-	// If token exists, return it and delete it
-	if exists {
-		// Get token and delete it
-		token, err := client.Do(context.Background(), client.B().Getdel().Key(tokenId).Build()).AsBytes()
-		if err != nil {
-			return false, "", err
-		}
-		return true, string(token), nil
-	}
-	return false, "", nil
+	return true, string(result), nil
 }

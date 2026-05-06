@@ -30,7 +30,7 @@ services:
   
   # TODO WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
   whisper-valkey:
-    image: valkey/valkey:alpine
+    image: valkey/valkey:9-alpine
     container_name: whisper-valkey-dev
     # restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"

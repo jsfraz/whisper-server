@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
-	"slices"
 	"strconv"
 )
 
@@ -24,6 +23,7 @@ func UserExistsByUsername(username string) (bool, error) {
 }
 
 // Insert user to database and delete invite code.
+// Invite code is deleted AFTER successful commit to avoid data loss.
 //
 //	@param user
 //	@param inviteCode
@@ -35,13 +35,12 @@ func InsertUser(user *models.User, inviteCode string) error {
 		tx.Rollback()
 		return err
 	}
-	// Delete code from Valekey
-	err = DeleteInviteDataByCode(inviteCode)
+	err = tx.Commit().Error
 	if err != nil {
-		tx.Rollback()
 		return err
 	}
-	return tx.Commit().Error
+	// Delete code from Valkey after successful commit
+	return DeleteInviteDataByCode(inviteCode)
 }
 
 // Check if admin exists.
@@ -188,28 +187,30 @@ func SearchUsersByUsername(username string, userId uint64) (*[]models.User, erro
 	return &users, nil
 }
 
-// Push users to delete list.
+// Push users to delete SET and clean up their messages.
 //
 //	@param ids
 //	@return error
 func PushUsersToDelete(ids []uint64) error {
-	client := utils.GetSingleton().ValkeyDelUser
-	for _, userId := range ids {
-		if err := client.Do(context.Background(), client.B().Rpush().Key("delete").Element(strconv.FormatUint(userId, 10)).Build()).Error(); err != nil {
-			return err
-		}
+	client := utils.GetSingleton().Valkey
+	// Add all user IDs to the delete SET
+	members := make([]string, len(ids))
+	for i, userId := range ids {
+		members[i] = strconv.FormatUint(userId, 10)
+	}
+	if err := client.Do(context.Background(), client.B().Sadd().Key("del:users").Member(members...).Build()).Error(); err != nil {
+		return err
 	}
 	// Delete messages for these users
-	msgClient := utils.GetSingleton().ValkeyMessage
 	for _, userId := range ids {
 		// Use SCAN to find keys matching pattern
-		pattern := fmt.Sprintf("%d_*", userId)
+		pattern := fmt.Sprintf("msg:%d_*", userId)
 		keys := []string{}
 
 		// Scan for matching keys
-		iter := msgClient.B().Scan().Cursor(0).Match(pattern).Count(100).Build()
+		iter := client.B().Scan().Cursor(0).Match(pattern).Count(100).Build()
 		for {
-			result, err := msgClient.Do(context.Background(), iter).AsScanEntry()
+			result, err := client.Do(context.Background(), iter).AsScanEntry()
 			if err != nil {
 				return err
 			}
@@ -217,12 +218,12 @@ func PushUsersToDelete(ids []uint64) error {
 			if result.Cursor == 0 {
 				break
 			}
-			iter = msgClient.B().Scan().Cursor(result.Cursor).Match(pattern).Count(100).Build()
+			iter = client.B().Scan().Cursor(result.Cursor).Match(pattern).Count(100).Build()
 		}
 
 		// Delete found keys in batches
 		if len(keys) > 0 {
-			if err := msgClient.Do(context.Background(), msgClient.B().Del().Key(keys...).Build()).Error(); err != nil {
+			if err := client.Do(context.Background(), client.B().Del().Key(keys...).Build()).Error(); err != nil {
 				return err
 			}
 		}
@@ -230,47 +231,46 @@ func PushUsersToDelete(ids []uint64) error {
 	return nil
 }
 
-// Get all users to delete.
+// Get all users to delete from SET.
 //
 //	@return []uint64
 //	@return error
 func GetAllUsersToDelete() ([]uint64, error) {
-	client := utils.GetSingleton().ValkeyDelUser
-	// Check len
-	length, err := client.Do(context.Background(), client.B().Llen().Key("delete").Build()).AsInt64()
+	client := utils.GetSingleton().Valkey
+	members, err := client.Do(context.Background(), client.B().Smembers().Key("del:users").Build()).AsStrSlice()
 	if err != nil {
 		return nil, err
 	}
-	// Get all IDs
-	ids, err := client.Do(context.Background(), client.B().Lrange().Key("delete").Start(0).Stop(length).Build()).AsIntSlice()
-	if err != nil {
-		return nil, err
-	}
-	result := make([]uint64, len(ids))
-	for i, v := range ids {
-		result[i] = uint64(v)
+	result := make([]uint64, 0, len(members))
+	for _, m := range members {
+		id, err := strconv.ParseUint(m, 10, 64)
+		if err != nil {
+			continue
+		}
+		result = append(result, id)
 	}
 	return result, nil
 }
 
-// Check if user is in to delete list.
+// Check if user is in to delete SET (O(1) lookup).
 //
 //	@param userId
 //	@return bool
 //	@return error
 func WillUserBeDeleted(userId uint64) (bool, error) {
-	ids, err := GetAllUsersToDelete()
+	client := utils.GetSingleton().Valkey
+	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).AsBool()
 	if err != nil {
 		return false, err
 	}
-	return slices.Contains(ids, userId), nil
+	return result, nil
 }
 
-// Remove deletd user's ID from delete list.
+// Remove deleted user's ID from delete SET.
 //
 //	@param userId
 //	@return error
 func RemoveDeletedUserId(userId uint64) error {
-	client := utils.GetSingleton().ValkeyDelUser
-	return client.Do(context.Background(), client.B().Lrem().Key("delete").Count(1).Element(strconv.FormatUint(userId, 10)).Build()).Error()
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Srem().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).Error()
 }

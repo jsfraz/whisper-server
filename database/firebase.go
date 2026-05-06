@@ -12,6 +12,6 @@ import (
 //	@param token
 //	@return error
 func PushFirebaseUserToken(userId uint64, token string) error {
-	client := utils.GetSingleton().ValkeyFirebase
-	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("%d", userId)).Value(token).Build()).Error()
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("fcm:%d", userId)).Value(token).Build()).Error()
 }

@@ -26,9 +26,9 @@ func PushInvite(code string, invite models.Invite, ttl int) error {
 	if err != nil {
 		return err
 	}
-	// Push
-	client := utils.GetSingleton().ValkeyInvite
-	err = client.Do(context.Background(), client.B().Set().Key(code).Value(string(i)).ExSeconds(int64(ttl)).Build()).Error()
+	// Push with invite: prefix
+	client := utils.GetSingleton().Valkey
+	err = client.Do(context.Background(), client.B().Set().Key("invite:"+code).Value(string(i)).ExSeconds(int64(ttl)).Build()).Error()
 	if err != nil {
 		return err
 	}
@@ -37,13 +37,13 @@ func PushInvite(code string, invite models.Invite, ttl int) error {
 
 // Subscribe for new invites and send mail.
 func SubscribeNewInvites() {
-	c, cancel := utils.GetSingleton().ValkeyInvite.Dedicate()
+	c, cancel := utils.GetSingleton().Valkey.Dedicate()
 	defer cancel()
 	wait := c.SetPubSubHooks(valkey.PubSubHooks{
 		OnMessage: func(m valkey.PubSubMessage) {
-			// Get invite from Valkey
-			client := utils.GetSingleton().ValkeyInvite
-			result, err := client.Do(context.Background(), client.B().Get().Key(m.Message).Build()).AsBytes()
+			// Get invite from Valkey (with prefix)
+			client := utils.GetSingleton().Valkey
+			result, err := client.Do(context.Background(), client.B().Get().Key("invite:"+m.Message).Build()).AsBytes()
 			// Return error except if is Valkey error
 			if err != nil && !errors.As(err, &valkeyErr) {
 				log.Println(err)
@@ -56,23 +56,15 @@ func SubscribeNewInvites() {
 				return
 			}
 			// Mail variables
-			var template *string
+			var tmpl string
 			var content string
 			var subject string
-			// Load template and set variables
+			// Load template from embedded strings
 			if inviteData.Admin {
-				template, err = utils.ReadFile("./mailTemplates/registerAdmin.hbs")
-				if err != nil {
-					log.Println(err)
-					return
-				}
+				tmpl = utils.GetSingleton().RegisterAdminTemplate
 				subject = "Admin registration"
 			} else {
-				template, err = utils.ReadFile("./mailTemplates/registerInvite.hbs")
-				if err != nil {
-					log.Println(err)
-					return
-				}
+				tmpl = utils.GetSingleton().RegisterInviteTemplate
 				subject = "Registration invite"
 			}
 			// Generate QR code
@@ -88,7 +80,7 @@ func SubscribeNewInvites() {
 			}
 			// Render template
 			content, err = raymond.Render(
-				*template,
+				tmpl,
 				map[string]string{
 					"qrBase64":   *qrBase64,
 					"validUntil": inviteData.ValidUntil.Format("2.1. 2006 15:04:05"),
@@ -119,8 +111,8 @@ func SubscribeNewInvites() {
 //	@return []byte
 //	@return error
 func GetInviteDataByCode(code string) (bool, []byte, error) {
-	client := utils.GetSingleton().ValkeyInvite
-	result, err := client.Do(context.Background(), client.B().Get().Key(code).Build()).AsBytes()
+	client := utils.GetSingleton().Valkey
+	result, err := client.Do(context.Background(), client.B().Get().Key("invite:"+code).Build()).AsBytes()
 	// Return error except if is Valkey error
 	if err != nil && !errors.As(err, &valkeyErr) {
 		return false, []byte{}, err
@@ -137,8 +129,8 @@ func GetInviteDataByCode(code string) (bool, []byte, error) {
 //	@param code
 //	@return error
 func DeleteInviteDataByCode(code string) error {
-	client := utils.GetSingleton().ValkeyInvite
-	return client.Do(context.Background(), client.B().Del().Key(code).Build()).Error()
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Del().Key("invite:"+code).Build()).Error()
 }
 
 // Check if admin invite exists
@@ -146,13 +138,13 @@ func DeleteInviteDataByCode(code string) error {
 //	@return bool
 //	@return error
 func AdminInviteExists() (bool, error) {
-	client := utils.GetSingleton().ValkeyInvite
+	client := utils.GetSingleton().Valkey
 
-	// Use SCAN instead of KEYS
+	// Use SCAN with invite: prefix
 	var cursor uint64 = 0
 	for {
 		// Scan batch of keys
-		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match("*").Count(100).Build()).AsScanEntry()
+		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match("invite:*").Count(100).Build()).AsScanEntry()
 		if err != nil {
 			return false, err
 		}
@@ -203,7 +195,11 @@ func CreateAdminInvite() error {
 	// Send admin invite
 	if !adminExists && !adminInviteExists {
 		ttl := utils.GetSingleton().Config.AdminInviteTtl
-		err = PushInvite(utils.RandomASCIIString(64), *models.NewInvite(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
+		code, err := utils.RandomASCIIString(64)
+		if err != nil {
+			return err
+		}
+		err = PushInvite(code, *models.NewInvite(utils.GetSingleton().Config.AdminMail, true, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
 		if err != nil {
 			return err
 		}
@@ -217,15 +213,15 @@ func CreateAdminInvite() error {
 //	@return error
 func GetAllInvites() (*[]models.Invite, error) {
 	var invites []models.Invite = []models.Invite{}
-	client := utils.GetSingleton().ValkeyInvite
+	client := utils.GetSingleton().Valkey
 
-	// Use SCAN instead of KEYS
+	// Use SCAN with invite: prefix
 	var cursor uint64 = 0
 	var keys []string
 	for {
 		// Scan batch of keys
 		var batch []string
-		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match("*").Count(100).Build()).AsScanEntry()
+		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match("invite:*").Count(100).Build()).AsScanEntry()
 		if err != nil {
 			return nil, err
 		}

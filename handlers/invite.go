@@ -28,9 +28,13 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 	}
 	// Create invite
 	ttl := utils.GetSingleton().Config.InviteTtl
-	err = database.PushInvite(utils.RandomASCIIString(64), *models.NewInvite(request.Mail, false, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
+	code, err := utils.RandomASCIIString(64)
 	if err != nil {
-		return err
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	err = database.PushInvite(code, *models.NewInvite(request.Mail, false, time.Now().Add(time.Duration(ttl)*time.Second)), ttl)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	return nil
 }

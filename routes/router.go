@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"jsfraz/whisper-server/handlers"
 	"jsfraz/whisper-server/utils"
+	"net/http"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -24,15 +25,14 @@ func NewRouter() (*fizz.Fizz, error) {
 		engine.Use(gin.Logger())
 	} else {
 		engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-			SkipPaths: []string{"/ws"},
+			SkipPaths: []string{"/ws", "/health"},
 		}))
 	}
 	// Recovery middleware
 	engine.Use(gin.Recovery())
-	// Default cors config, Allow Origin, Authorization header
+	// CORS config – mobile app only, no credentials needed
 	config := cors.DefaultConfig()
 	config.AllowAllOrigins = true
-	config.AllowCredentials = true
 	config.AllowHeaders = append(config.AllowHeaders, "Authorization")
 	engine.Use(cors.New(config))
 
@@ -74,6 +74,11 @@ func NewRouter() (*fizz.Fizz, error) {
 		}
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
+
+	// Health endpoint
+	engine.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	// WebSocket handler
 	engine.GET("/ws", handlers.WebSocketHandler)
