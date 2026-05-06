@@ -26,7 +26,7 @@ func InitSqlite() {
 	if err != nil {
 		log.Panicln(err)
 	}
-	utils.GetSingleton().Sqlite = *sqlite
+	utils.GetSingleton().Sqlite = sqlite
 }
 
 // Gets Gorm log level.

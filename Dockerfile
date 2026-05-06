@@ -26,14 +26,15 @@ WORKDIR /app
 # Copy the compiled binary from the build stage
 COPY --from=build /app/whisper-server .
 
-# Copy mail templates needed at runtime
-COPY --from=build /app/mailTemplates ./mailTemplates
-
 # Create a directory for data persistence
 RUN mkdir -p /app/data
 
 # Expose the port that the application will run on
 EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Command to run the application
 CMD ["./whisper-server"]

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"log"
 	"sync"
 
 	"jsfraz/whisper-server/models"
@@ -14,15 +15,21 @@ type WSConnection struct {
 	writeMu sync.Mutex
 }
 
-// Send WsRespons
+// Send WsResponse
 //
 //	@param message
 func (c *WSConnection) Send(message models.WsResponse) {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
-	binaryMessage, _ := models.MarshalWsResponse(message)
-	c.Conn.WriteMessage(websocket.BinaryMessage, binaryMessage)
+	binaryMessage, err := models.MarshalWsResponse(message)
+	if err != nil {
+		log.Printf("failed to marshal ws response: %v", err)
+		return
+	}
+	if err := c.Conn.WriteMessage(websocket.BinaryMessage, binaryMessage); err != nil {
+		log.Printf("failed to write ws message: %v", err)
+	}
 }
 
 // Send error as WsResponse

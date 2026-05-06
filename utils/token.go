@@ -8,7 +8,7 @@ import (
 	"crypto/rsa"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt"
+	jwt "github.com/golang-jwt/jwt/v5"
 )
 
 // Creates signed access token.
@@ -78,7 +78,7 @@ func ExtractTokenFromContext(c *gin.Context) string {
 // @return uint64
 // @return error
 func GetUserIdFromToken(tokenStr string) (uint64, error) {
-	token, _, err := new(jwt.Parser).ParseUnverified(tokenStr, jwt.MapClaims{})
+	token, _, err := jwt.NewParser().ParseUnverified(tokenStr, jwt.MapClaims{})
 	if err != nil {
 		return 0, err
 	}

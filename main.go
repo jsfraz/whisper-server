@@ -9,11 +9,21 @@ import (
 	"jsfraz/whisper-server/utils"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	firebase "firebase.google.com/go/v4"
 )
 
 const addr = "0.0.0.0:8080"
+
+//go:embed mailTemplates/registerAdmin.hbs
+var registerAdminTemplate string
+
+//go:embed mailTemplates/registerInvite.hbs
+var registerInviteTemplate string
 
 func main() {
 	// Log settings
@@ -31,6 +41,10 @@ func main() {
 		log.Panicln(fmt.Errorf("failed to load config: %v", err))
 	}
 	singleton.Config = *config
+
+	// Store embedded mail templates
+	singleton.RegisterAdminTemplate = registerAdminTemplate
+	singleton.RegisterInviteTemplate = registerInviteTemplate
 
 	// Setup SQLite
 	database.InitSqlite()
@@ -57,14 +71,17 @@ func main() {
 	if err != nil {
 		log.Panicln(err)
 	}
-	// Start HTTP server
+	// Start HTTP server with timeouts
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: router,
+		Addr:         addr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 	// Start server in separated goroutine, panic on error
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Panicln(err)
 		}
 	}()
@@ -80,7 +97,22 @@ func main() {
 		log.Panicln(err)
 	}
 
-	// Channel for blocking exiting main function
-	waitForSignal := make(chan bool)
-	<-waitForSignal
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("server forced to shutdown: %v", err)
+	}
+
+	// Close Valkey client
+	singleton.Valkey.Close()
+
+	log.Println("server exited")
 }

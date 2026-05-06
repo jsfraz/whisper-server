@@ -8,51 +8,9 @@ import (
 	"github.com/valkey-io/valkey-go"
 )
 
-// Initializes database or panics.
+// Initializes Valkey client or panics.
 func InitValkey() {
-	// Valkey for invites
-	valkeyInvite, err := valkey.NewClient(getValkeyClientOptions(0))
-	if err != nil {
-		log.Panicln(err)
-	}
-
-	// Valkey for WebSocket access tokens
-	valkeyWs, err := valkey.NewClient(getValkeyClientOptions(1))
-	if err != nil {
-		log.Panicln(err)
-	}
-
-	// Valkey for user messages
-	valkeyMessage, err := valkey.NewClient(getValkeyClientOptions(2))
-	if err != nil {
-		log.Panicln(err)
-	}
-
-	// Valkey for deleting users
-	valkeyUserDel, err := valkey.NewClient(getValkeyClientOptions(3))
-	if err != nil {
-		log.Panicln(err)
-	}
-
-	// Valkey for Firebase tokens
-	valkeyFirebase, err := valkey.NewClient(getValkeyClientOptions(4))
-	if err != nil {
-		log.Panicln(err)
-	}
-
-	utils.GetSingleton().ValkeyInvite = valkeyInvite
-	utils.GetSingleton().ValkeyWs = valkeyWs
-	utils.GetSingleton().ValkeyMessage = valkeyMessage
-	utils.GetSingleton().ValkeyDelUser = valkeyUserDel
-	utils.GetSingleton().ValkeyFirebase = valkeyFirebase
-}
-
-// Return Valkey clien options.
-//
-//	@param db
-//	@return valkey.ClientOption
-func getValkeyClientOptions(db int) valkey.ClientOption {
-	return valkey.ClientOption{
+	client, err := valkey.NewClient(valkey.ClientOption{
 		InitAddress: []string{
 			fmt.Sprintf("%s:%d",
 				utils.GetSingleton().Config.ValkeyHost,
@@ -60,5 +18,9 @@ func getValkeyClientOptions(db int) valkey.ClientOption {
 			),
 		},
 		Password: utils.GetSingleton().Config.ValkeyPassword,
-		SelectDB: db}
+	})
+	if err != nil {
+		log.Panicln(err)
+	}
+	utils.GetSingleton().Valkey = client
 }

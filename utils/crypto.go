@@ -1,30 +1,32 @@
 package utils
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"math/rand"
-	"time"
+	"math/big"
 )
 
-// Reurns random string.
+// Returns cryptographically secure random string.
 //
 //	@param length
 //	@return string
-func RandomASCIIString(length int) string {
+func RandomASCIIString(length int) (string, error) {
 	// Chars
 	const charset = "!%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~"
-	// Random generator
-	var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 	// Byte slice for result
 	result := make([]byte, length)
 	// Generate random chars
 	for i := range result {
-		result[i] = charset[seededRand.Intn(len(charset))]
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		result[i] = charset[n.Int64()]
 	}
-	return string(result)
+	return string(result), nil
 }
 
 // Load and validate RSA public key.

@@ -144,8 +144,8 @@ func DeleteMe(c *gin.Context) error {
 		}
 	}
 
-	// Delete users and messages for him
-	database.DeleteUserPrivateMessages(userId.(uint64))
+	// Delete messages for the user
+	err = database.DeleteUserPrivateMessages(userId.(uint64))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
