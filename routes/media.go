@@ -31,7 +31,7 @@ func MediaRoute(g *fizz.RouterGroup) {
 				http.StatusInternalServerError,
 			},
 			true),
-		tonic.Handler(handlers.UploadMedia, http.StatusOK),
+		handlers.UploadMedia,
 	)
 
 	// Download encrypted media file by id (raw gin handler so ciphertext can be streamed).

@@ -15,14 +15,28 @@ import (
 )
 
 // Upload an encrypted media file. The server stores only the ciphertext (zero-knowledge)
-// and binds it to the intended receiver. The file is deleted after the receiver downloads
-// it once or when its Valkey TTL expires.
+// and binds it to the intended receiver. The file is deleted after the receiver confirms
+// download or when its Valkey TTL expires.
+//
+// Registered as a raw gin handler: the body is multipart/form-data (file + receiverId).
+// Tonic would bind application/json and fail on multipart boundaries ("invalid character '-'…").
 //
 //	@param c
-//	@param request
-//	@return *models.MediaUploadResponse
-//	@return error
-func UploadMedia(c *gin.Context, request *models.UploadMediaInput) (*models.MediaUploadResponse, error) {
+func UploadMedia(c *gin.Context) {
+	var request models.UploadMediaInput
+	if err := c.ShouldBind(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response, err := uploadMediaFromInput(c, &request)
+	if err != nil {
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*models.MediaUploadResponse, error) {
 	senderId, _ := c.Get("userId")
 	senderIdUint := senderId.(uint64)
 
