@@ -33,7 +33,7 @@ services:
     image: valkey/valkey:9-alpine
     container_name: whisper-valkey
     restart: always
-    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
+    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning --notify-keyspace-events Ex"
     volumes:
       - valkey_data:/data
 

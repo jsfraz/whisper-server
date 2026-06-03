@@ -56,6 +56,15 @@ type Config struct {
 
 	// Message TTL
 	MessageTtl int `envconfig:"MESSAGE_TTL" default:"2592000"` // Default 2592000 (30 days)
+
+	// Media TTL (should be >= MessageTtl so offline recipients can still fetch referenced media)
+	MediaTtl int `envconfig:"MEDIA_TTL" default:"2592000"` // Default 2592000 (30 days)
+
+	// Maximum allowed upload size for a single media file in bytes
+	MediaMaxUploadSize int64 `envconfig:"MEDIA_MAX_UPLOAD_SIZE" default:"26214400"` // Default 26214400 (25 MiB)
+
+	// Directory where encrypted media files are stored
+	MediaDir string `envconfig:"MEDIA_DIR" default:"data/media"` // Default data/media
 }
 
 // Loads config from environmental values.
@@ -68,7 +77,7 @@ func LoadConfig() (*Config, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		err = os.Mkdir("data/", os.ModePerm)
 		if err != nil {
-			log.Panicln(err)
+			log.Fatalln(err)
 		}
 	}
 
@@ -88,6 +97,12 @@ func LoadConfig() (*Config, error) {
 	err = envconfig.Process("", &config)
 	if err != nil {
 		return nil, err
+	}
+
+	// Ensure media directory exists
+	err = os.MkdirAll(config.MediaDir, os.ModePerm)
+	if err != nil {
+		log.Fatalln(err)
 	}
 
 	// Validate mail

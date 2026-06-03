@@ -20,6 +20,8 @@ import (
 func NewRouter() (*fizz.Fizz, error) {
 	// Gin instance
 	engine := gin.New()
+	// Limit in-memory buffering of multipart uploads; larger files stream to a temp file
+	engine.MaxMultipartMemory = 8 << 20 // 8 MiB
 	// Logger middleware
 	if utils.GetSingleton().Config.GinMode != "release" {
 		engine.Use(gin.Logger())
@@ -89,6 +91,7 @@ func NewRouter() (*fizz.Fizz, error) {
 	InviteRoute(grp)
 	WsAuthRoute(grp)
 	FirebaseRoute(grp)
+	MediaRoute(grp)
 
 	if len(fizz.Errors()) != 0 {
 		return nil, fmt.Errorf("fizz errors: %v", fizz.Errors())

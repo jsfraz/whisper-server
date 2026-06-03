@@ -38,7 +38,7 @@ func main() {
 	// Load config or panic
 	config, err := utils.LoadConfig()
 	if err != nil {
-		log.Panicln(fmt.Errorf("failed to load config: %v", err))
+		log.Fatalln(fmt.Errorf("failed to load config: %v", err))
 	}
 	singleton.Config = *config
 
@@ -54,11 +54,11 @@ func main() {
 	// Initialize Firebase app
 	firebaseApp, err := firebase.NewApp(context.Background(), nil)
 	if err != nil {
-		log.Panicln(fmt.Errorf("failed to initialize Firebase: %v", err))
+		log.Fatalln(fmt.Errorf("failed to initialize Firebase: %v", err))
 	}
 	firebaseMsg, err := firebaseApp.Messaging(context.Background())
 	if err != nil {
-		log.Panicln(fmt.Errorf("failed to initialize Firebase Messaging: %v", err))
+		log.Fatalln(fmt.Errorf("failed to initialize Firebase Messaging: %v", err))
 	}
 	singleton.FirebaseMsg = firebaseMsg
 
@@ -69,7 +69,7 @@ func main() {
 	// Get router or panic
 	router, err := routes.NewRouter()
 	if err != nil {
-		log.Panicln(err)
+		log.Fatalln(err)
 	}
 	// Start HTTP server with timeouts
 	srv := &http.Server{
@@ -82,7 +82,7 @@ func main() {
 	// Start server in separated goroutine, panic on error
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Panicln(err)
+			log.Fatalln(err)
 		}
 	}()
 
@@ -91,10 +91,15 @@ func main() {
 		database.SubscribeNewInvites()
 	}()
 
+	// Delete expired media files from disk on Valkey key expiry
+	go func() {
+		database.SubscribeExpiredMedia()
+	}()
+
 	// Create admin invite if admin does not exist
 	err = database.CreateAdminInvite()
 	if err != nil {
-		log.Panicln(err)
+		log.Fatalln(err)
 	}
 
 	// Graceful shutdown

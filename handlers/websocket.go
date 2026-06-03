@@ -181,6 +181,8 @@ func checkAccountDeletion(conn *utils.WSConnection) (bool, error) {
 		database.RemoveDeletedUserId(conn.UserId)
 		// Delete messages from Valkey
 		database.DeleteUserPrivateMessages(conn.UserId)
+		// Delete media from server
+		database.DeleteUserMedia(conn.UserId)
 
 	}
 	return toDelete, nil
