@@ -73,6 +73,10 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	for _, userId := range request.Ids {
 		database.DeleteUserPrivateMessages(userId)
 	}
+	// Delete media from server
+	for _, userId := range request.Ids {
+		database.DeleteUserMedia(userId)
+	}
 	// Send ws message to client
 	onlineIds := utils.GetSingleton().Hub.DeleteUsers(request.Ids)
 	// Delete IDs from Valkey
@@ -146,6 +150,12 @@ func DeleteMe(c *gin.Context) error {
 
 	// Delete messages for the user
 	err = database.DeleteUserPrivateMessages(userId.(uint64))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	// Delete media for the user
+	err = database.DeleteUserMedia(userId.(uint64))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}

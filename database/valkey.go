@@ -20,7 +20,7 @@ func InitValkey() {
 		Password: utils.GetSingleton().Config.ValkeyPassword,
 	})
 	if err != nil {
-		log.Panicln(err)
+		log.Fatalln(err)
 	}
 	utils.GetSingleton().Valkey = client
 }

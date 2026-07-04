@@ -2,38 +2,38 @@ name: whisper-dev
 
 services:
 
-  whisper-server:
-    container_name: whisper-server-dev
-    # restart: always
-    build: .
-    image: whisper-server
-    ports:
-       - "8080:8080"
-    volumes:
-       - /etc/localtime:/etc/localtime:ro
-       - ./data:/app/data
-    depends_on:
-      - whisper-valkey
-    environment:
-      - GIN_MODE=release
-      - SERVER_URL=${SERVER_URL}
-      - SQLITE_PASSWORD=${SQLITE_PASSWORD}
-      - VALKEY_HOST=whisper-valkey-dev
-      - VALKEY_PASSWORD=${VALKEY_PASSWORD}
-      - ADMIN_MAIL=${ADMIN_MAIL}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_HOST=${SMTP_HOST}
-      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}
-      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
-      - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
+  # whisper-server:
+  #   container_name: whisper-server-dev
+  #   # restart: always
+  #   build: .
+  #   image: whisper-server
+  #   ports:
+  #      - "8080:8080"
+  #   volumes:
+  #      - /etc/localtime:/etc/localtime:ro
+  #      - ./data:/app/data
+  #   depends_on:
+  #     - whisper-valkey
+  #   environment:
+  #    - GIN_MODE=debug
+  #    - SERVER_URL=${SERVER_URL}
+  #    - SQLITE_PASSWORD=${SQLITE_PASSWORD}
+  #    - VALKEY_HOST=whisper-valkey-dev
+  #    - VALKEY_PASSWORD=${VALKEY_PASSWORD}
+  #    - ADMIN_MAIL=${ADMIN_MAIL}
+  #    - SMTP_USER=${SMTP_USER}
+  #    - SMTP_PASSWORD=${SMTP_PASSWORD}
+  #    - SMTP_HOST=${SMTP_HOST}
+  #    - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET}
+  #    - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
+  #    - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
   # TODO WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
   whisper-valkey:
     image: valkey/valkey:9-alpine
     container_name: whisper-valkey-dev
     # restart: always
-    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning"
+    command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning --notify-keyspace-events Ex"
     volumes:
       - valkey_data:/data
 

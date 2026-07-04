@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.26.2-alpine AS build
+FROM golang:1.26.4-alpine AS build
 
 WORKDIR /app
 
@@ -25,6 +25,7 @@ WORKDIR /app
 
 # Copy the compiled binary from the build stage
 COPY --from=build /app/whisper-server .
+COPY --from=build /app/static ./static
 
 # Create a directory for data persistence
 RUN mkdir -p /app/data
