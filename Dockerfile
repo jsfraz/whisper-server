@@ -25,6 +25,7 @@ WORKDIR /app
 
 # Copy the compiled binary from the build stage
 COPY --from=build /app/whisper-server .
+COPY --from=build /app/static ./static
 
 # Create a directory for data persistence
 RUN mkdir -p /app/data
