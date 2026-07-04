@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="icon.svg">
+    <title>Whisper server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+            width: 100%;
+            overflow: hidden;
+
+            background-color: #1377f0;
+            background-image:
+                radial-gradient(circle at 0% 100%, #834bf1 0%, transparent 55%),
+                radial-gradient(circle at 0% 0%, #35a6f8 0%, transparent 50%),
+                linear-gradient(135deg, #1e9af7 0%, #1377f0 50%, #0a43c3 100%);
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+
+        .logo {
+            display: block;
+            width: clamp(10rem, 62vmin, 28rem);
+            height: auto;
+            aspect-ratio: 1;
+        }
+    </style>
+</head>
+<body>
+    <img src="icon.svg" class="logo" width="1024" height="1024">
+</body>
+</html>
