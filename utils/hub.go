@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	messaging "firebase.google.com/go/v4/messaging"
@@ -47,6 +48,12 @@ func NewHub() *Hub {
 		Register:   make(chan *WSConnection),
 		Unregister: make(chan *WSConnection),
 	}
+}
+
+func sanitizeForLog(value string) string {
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, "\r", "")
+	return value
 }
 
 // Run starts the Hub's main event loop to handle connections and messages
@@ -138,7 +145,8 @@ func (h *Hub) Run() {
 
 					// Send push notification
 					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
-						slog.Warn("failed to send push notification", "user_id", privateMessage.ReceiverId, "error", err)
+						sanitizedReceiverID := sanitizeForLog(strconv.FormatUint(privateMessage.ReceiverId, 10))
+						slog.Warn("failed to send push notification", "user_id", sanitizedReceiverID, "error", err)
 					}
 				}
 			}
