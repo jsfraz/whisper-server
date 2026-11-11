@@ -43,18 +43,38 @@ Visit [docs](https://firebase.google.com/docs/admin/setup) to set up Firebase Ad
 
 ## CI/CD Deployment
 
-The application uses GitHub Actions to automatically build and deploy when pushing to the main branch. For this process to work correctly, the following secret keys must be set in the repository settings (Settings > Secrets and variables > Actions):
+Three GitHub Actions workflows run in this repository:
+
+- `ci.yml` — on pull requests and on pushes to `main`: build, tests, lint (new code only), OpenAPI spec drift, `oasdiff` breaking changes, secret scan, dependency scan.
+- `codeql.yml` — code scanning on `main` and weekly.
+- `deploy-to-vps.yml` — **after `ci.yml` succeeds on `main`**, deploys the current `main` to the VPS. It does not run on a bare push.
+
+Required repository secrets (Settings > Secrets and variables > Actions):
+
+| Secret | Used by | Description |
+| --- | --- | --- |
+| `VPS_HOST` | deploy | IP address or domain name of the VPS server |
+| `VPS_USERNAME` | deploy | Username for SSH access |
+| `VPS_SSH_KEY` | deploy | Private SSH key for server access |
+| `VPS_PORT` | deploy | SSH port (usually 22) |
+| `PROJECT_PATH` | deploy | Absolute path to the directory to clone the project to on the VPS server |
+| `FIREBASE_JSON_BASE64` | deploy | Contents of the `firebase.json` credentials file encoded in base64 |
+| `SNYK_TOKEN` | ci | Snyk API token for the dependency scan |
+| `GITHUB_TOKEN` | ci, codeql | Provided automatically by GitHub, do not create it |
+
+The deploy workflow also writes `.env.prod` on the VPS from repository secrets. These are the runtime variables listed in [Environment variables](#environment-variables) and must exist as secrets too:
 
 | Secret | Description |
 | --- | --- |
-| VPS_HOST | IP address or domain name of the VPS server |
-| VPS_USERNAME | Username for SSH access |
-| VPS_SSH_KEY | Private SSH key for server access |
-| VPS_PORT | SSH port (usually 22) |
-| PROJECT_PATH | Absolute path to the directory to clone the project to on the VPS server |
-| FIREBASE_JSON_BASE64 | Contents of the firebase.json file encoded in base64 |
+| `SERVER_URL` | Public server URL |
+| `SQLITE_PASSWORD` | SQLCipher database password |
+| `VALKEY_PASSWORD` | Valkey password |
+| `ADMIN_MAIL` | Administrator email address |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` | Outgoing mail credentials |
+| `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET`, `WS_ACCESS_TOKEN_SECRET` | JWT signing secrets |
 
-And other variables listed in [Environment variables](#environment-variables).
+Variables with defaults (`ADMIN_INVITE_TTL`, `INVITE_TTL`, token lifespans, `MESSAGE_TTL`, `MEDIA_TTL`, `MEDIA_MAX_UPLOAD_SIZE`, `MEDIA_DIR`, `SMTP_PORT`, `VALKEY_PORT`, `GIN_MODE`) are not passed by the workflow; set them in `docker-compose.prod.yml` if you need to override a default.
+
 
 To get `FIREBASE_JSON_BASE64`, run:
 

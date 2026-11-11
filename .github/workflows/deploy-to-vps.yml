@@ -1,9 +1,12 @@
 name: Deploy to VPS
 
-# Workflow for automatic deployment of an application to VPS when pushing to the main branch
+# Deploys only after the CI workflow finished successfully on main.
+# Tag-driven releases (ghcr image + rollback) come in phase 2.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches:
       - main
 
@@ -11,6 +14,7 @@ jobs:
   deploy:
     name: Deploy Application
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
     
     steps:
       - name: Checkout repository

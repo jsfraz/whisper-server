@@ -122,6 +122,9 @@ func NewRouter() (*fizz.Fizz, error) {
 	FirebaseRoute(grp)
 	MediaRoute(grp)
 
+	// Document the media endpoints, which are raw Gin handlers (see media_openapi.go).
+	addMediaOperations(fizz.Generator())
+
 	// Static files - must be after defining all API routes
 	absRoot, err := filepath.Abs(staticRoot)
 	if err != nil {

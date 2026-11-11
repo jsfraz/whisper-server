@@ -1,5 +1,6 @@
 __debug_bin*
+.env
 .env.dev
 .env.prod
-*.json
 data/
+firebase.json

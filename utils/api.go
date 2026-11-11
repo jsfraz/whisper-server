@@ -27,7 +27,7 @@ func CreateOperationOption(summary string, description string, errorStatuses []i
 			"bearerAuth": []string{},
 		}))
 	}
-	for i := 0; i < len(errorStatuses); i++ { // Append each error with reponse
+	for i := 0; i < len(errorStatuses); i++ { // Append each error with response
 		// create option
 		option = append(option,
 			fizz.Response(
