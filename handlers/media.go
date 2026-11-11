@@ -76,7 +76,10 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	}
 	defer src.Close()
 
-	path := database.MediaFilePath(id)
+	path, err := database.MediaFilePath(id)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	dst, err := os.Create(path)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
@@ -134,7 +137,11 @@ func DownloadMedia(c *gin.Context) {
 	}
 
 	// Open file
-	path := database.MediaFilePath(id)
+	path, err := database.MediaFilePath(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid media id"})
+		return
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		// File missing but metadata present: clean up the orphaned key

@@ -44,4 +44,16 @@ func TestRequestLogger(t *testing.T) {
 	if got := recorder.Header().Get(RequestIDHeader); got == "" {
 		t.Fatal("generated request id is empty")
 	}
+
+	// Line breaks in the header are stripped so they cannot forge log lines.
+	request = httptest.NewRequest(http.MethodGet, "/ping", nil)
+	request.Header.Set(RequestIDHeader, "evil\nrequest")
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if got := recorder.Header().Get(RequestIDHeader); got != "evilrequest" {
+		t.Fatalf("sanitized request id: got %q", got)
+	}
+	if strings.Contains(logs.String(), "evil\nrequest") {
+		t.Fatal("log contains an unsanitized request id")
+	}
 }

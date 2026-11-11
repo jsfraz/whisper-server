@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/valkey-io/valkey-go"
 )
 
@@ -20,9 +21,18 @@ const mediaKeyPrefix = "media:"
 //
 //	@param id
 //	@return string
-func MediaFilePath(id string) string {
-	// filepath.Base prevents path traversal via crafted ids.
-	return filepath.Join(utils.GetSingleton().Config.MediaDir, filepath.Base(id))
+func MediaFilePath(id string) (string, error) {
+	if !isValidMediaID(id) {
+		return "", errors.New("invalid media id")
+	}
+	// Valid UUID ids are single path components; Base is retained as defense-in-depth.
+	return filepath.Join(utils.GetSingleton().Config.MediaDir, filepath.Base(id)), nil
+}
+
+// Validate media id format (UUID).
+func isValidMediaID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
 }
 
 // Store MediaMetadata in Valkey with a TTL (the file itself lives on disk).
@@ -67,8 +77,18 @@ func GetMediaMetadata(id string) (bool, *models.MediaMetadata, error) {
 //	@param id
 //	@return error
 func DeleteMedia(id string) error {
+	path, err := MediaFilePath(id)
+	if err != nil {
+		return err
+	}
+	path = filepath.Clean(path)
+	mediaDir := filepath.Clean(utils.GetSingleton().Config.MediaDir)
+	if path == mediaDir || !strings.HasPrefix(path, mediaDir+string(os.PathSeparator)) {
+		return errors.New("invalid media path")
+	}
+
 	// Remove file from disk (ignore missing file)
-	err := os.Remove(MediaFilePath(id))
+	err = os.Remove(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -132,7 +152,12 @@ func SubscribeExpiredMedia() {
 			}
 			id := strings.TrimPrefix(m.Message, mediaKeyPrefix)
 			// Metadata key has already expired, just remove the file from disk
-			err := os.Remove(MediaFilePath(id))
+			path, err := MediaFilePath(id)
+			if err != nil {
+				slog.Error("failed to resolve expired media file path", "media_id", id, "error", err)
+				return
+			}
+			err = os.Remove(path)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				slog.Error("failed to delete expired media file", "media_id", id, "error", err)
 			}
