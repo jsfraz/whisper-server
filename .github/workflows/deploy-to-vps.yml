@@ -28,21 +28,22 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     env:
       IMAGE_TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
-      PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
-      SERVER_URL: ${{ secrets.SERVER_URL }}
-      SQLITE_PASSWORD: ${{ secrets.SQLITE_PASSWORD }}
-      VALKEY_PASSWORD: ${{ secrets.VALKEY_PASSWORD }}
-      ADMIN_MAIL: ${{ secrets.ADMIN_MAIL }}
-      SMTP_HOST: ${{ secrets.SMTP_HOST }}
-      SMTP_USER: ${{ secrets.SMTP_USER }}
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-      ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
-      REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
-      WS_ACCESS_TOKEN_SECRET: ${{ secrets.WS_ACCESS_TOKEN_SECRET }}
-      FIREBASE_JSON_BASE64: ${{ secrets.FIREBASE_JSON_BASE64 }}
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@master
+        env:
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+          SQLITE_PASSWORD: ${{ secrets.SQLITE_PASSWORD }}
+          VALKEY_PASSWORD: ${{ secrets.VALKEY_PASSWORD }}
+          ADMIN_MAIL: ${{ secrets.ADMIN_MAIL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
+          WS_ACCESS_TOKEN_SECRET: ${{ secrets.WS_ACCESS_TOKEN_SECRET }}
+          FIREBASE_JSON_BASE64: ${{ secrets.FIREBASE_JSON_BASE64 }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
