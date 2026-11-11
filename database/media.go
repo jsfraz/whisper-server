@@ -81,6 +81,11 @@ func DeleteMedia(id string) error {
 	if err != nil {
 		return err
 	}
+	path = filepath.Clean(path)
+	mediaDir := filepath.Clean(utils.GetSingleton().Config.MediaDir)
+	if path == mediaDir || !strings.HasPrefix(path, mediaDir+string(os.PathSeparator)) {
+		return errors.New("invalid media path")
+	}
 
 	// Remove file from disk (ignore missing file)
 	err = os.Remove(path)
