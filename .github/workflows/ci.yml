@@ -34,7 +34,10 @@ jobs:
         run: go build ./...
 
       - name: Test
-        run: go test ./...
+        run: go test $(go list ./... | grep -v '/e2e$')
+
+      - name: E2E (Docker + Valkey)
+        run: go test ./e2e/... -v
 
       - name: OpenAPI spec matches routes
         run: |

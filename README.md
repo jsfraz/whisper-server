@@ -6,6 +6,13 @@ For Whisper app, see [whisper](https://github.com/jsfraz/whisper) repository.
 
 Also see [Wiki](https://github.com/jsfraz/whisper-server/wiki)!
 
+## Architecture and operations
+
+- [Architecture](docs/architecture.md) - C4 context, containers and dependency rules
+- [Threat model](docs/threat-model.md) - STRIDE for auth/WS and media
+- [Runbook](docs/runbook.md) - restart, rollback, secret rotation
+- [ADRs](docs/adr/README.md) - accepted decisions
+
 ## Development
 
 ```bash
@@ -100,10 +107,3 @@ To get `FIREBASE_JSON_BASE64`, run:
 ### Reverse proxy
 
 For deploying behind a reverse proxy see [nginx configuration](whisper.conf).
-
-## TODO fix
-
-- Server musí běžet a subscriber musí být připojený — jinak po expiraci klíče může soubor na disku zůstat. Není atomické — mezi expirací klíče a os.Remove může být krátké okno; soubor už nejde stáhnout (metadata chybí → 404). Pokud někdo před TTL zavolá confirmMediaDownload, smaže se disk i klíč; pozdější TTL notifikace pro ten klíč už nepřijde (klíč už neexistuje).
-Shrnutí: TTL v Redis/Valkey řídí metadata; mazání souboru na disku po expiraci dělá pub/sub listener SubscribeExpiredMedia, ne samotný Valkey.
-
-- Změnit ID uživatelů z čísla na neuhodnutelné UUID

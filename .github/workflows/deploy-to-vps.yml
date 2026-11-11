@@ -1,133 +1,172 @@
 name: Deploy to VPS
 
-# Deploys only after the CI workflow finished successfully on main.
-# Tag-driven releases (ghcr image + rollback) come in phase 2.
-
+# Deploys the image published by the Release workflow. A manual run accepts a
+# tag for rollbacks; the automatic run uses the tag that triggered the release.
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Release"]
     types: [completed]
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to deploy (e.g. v1.2.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy Application
+    name: Pull image and deploy
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
-    
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    env:
+      IMAGE_TAG: ${{ inputs.tag || github.event.workflow_run.head_branch }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0  # Download full history for potential change comparisons
-
-      - name: Setup SSH and Deploy
+      - name: Deploy over SSH
         uses: appleboy/ssh-action@master
+        env:
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+          SQLITE_PASSWORD: ${{ secrets.SQLITE_PASSWORD }}
+          VALKEY_PASSWORD: ${{ secrets.VALKEY_PASSWORD }}
+          ADMIN_MAIL: ${{ secrets.ADMIN_MAIL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
+          WS_ACCESS_TOKEN_SECRET: ${{ secrets.WS_ACCESS_TOKEN_SECRET }}
+          FIREBASE_JSON_BASE64: ${{ secrets.FIREBASE_JSON_BASE64 }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          # Upload files to the server
-          envs: GITHUB_SHA
-          script_stop: true  # Stop executing further commands on error
+          envs: IMAGE_TAG,PROJECT_PATH,SERVER_URL,SQLITE_PASSWORD,VALKEY_PASSWORD,ADMIN_MAIL,SMTP_HOST,SMTP_USER,SMTP_PASSWORD,ACCESS_TOKEN_SECRET,REFRESH_TOKEN_SECRET,WS_ACCESS_TOKEN_SECRET,FIREBASE_JSON_BASE64
           script: |
-            # Check if project directory exists and if it's a git repository
-            export ACTUAL_PATH="${{ secrets.PROJECT_PATH }}/whisper-server"
+            set -euo pipefail
+
+            ACTUAL_PATH="$PROJECT_PATH/whisper-server"
             if [ -d "$ACTUAL_PATH/.git" ]; then
-              echo "Git repository exists, updating repository..."
-              cd $ACTUAL_PATH
-              git pull origin main
+              cd "$ACTUAL_PATH"
+              git fetch --tags --prune origin
             else
-              echo "Git repository doesn't exist, setting up from scratch..."
-              # Create PROJECT_PATH if it doesn't exist
               mkdir -p "$ACTUAL_PATH"
               cd "$ACTUAL_PATH"
-              
-              # Initialize as git repository and set remote
               git init
               git remote add origin https://github.com/jsfraz/whisper-server.git
-              
-              # Fetch and checkout main branch
-              git fetch origin main
-              git checkout -f -B main origin/main
+              git fetch --tags origin
             fi
-            
-            echo "Creating data directory if it doesn't exist..."
+            # Use the compose file from the tag being deployed.
+            git checkout -f "$IMAGE_TAG"
+
             mkdir -p data
-      
-      - name: Deploy
-        uses: appleboy/ssh-action@master
+            {
+              printf 'SERVER_URL=%s\n' "$SERVER_URL"
+              printf 'SQLITE_PASSWORD=%s\n' "$SQLITE_PASSWORD"
+              printf 'VALKEY_PASSWORD=%s\n' "$VALKEY_PASSWORD"
+              printf 'ADMIN_MAIL=%s\n' "$ADMIN_MAIL"
+              printf 'SMTP_HOST=%s\n' "$SMTP_HOST"
+              printf 'SMTP_USER=%s\n' "$SMTP_USER"
+              printf 'SMTP_PASSWORD=%s\n' "$SMTP_PASSWORD"
+              printf 'ACCESS_TOKEN_SECRET=%s\n' "$ACCESS_TOKEN_SECRET"
+              printf 'REFRESH_TOKEN_SECRET=%s\n' "$REFRESH_TOKEN_SECRET"
+              printf 'WS_ACCESS_TOKEN_SECRET=%s\n' "$WS_ACCESS_TOKEN_SECRET"
+            } > .env.prod
+            printf '%s' "$FIREBASE_JSON_BASE64" | base64 --decode > data/firebase.json
+
+            PREVIOUS_TAG="$(cat .whisper-image-tag 2>/dev/null || true)"
+
+            deploy() {
+              export WHISPER_IMAGE_TAG="$1"
+              echo "Deploying $WHISPER_IMAGE_TAG"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod pull whisper-server
+              docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
+              for _ in $(seq 1 36); do
+                status="$(docker inspect -f '{{.State.Health.Status}}' whisper-server 2>/dev/null || echo starting)"
+                case "$status" in
+                  healthy) return 0 ;;
+                  unhealthy) return 1 ;;
+                esac
+                sleep 5
+              done
+              return 1
+            }
+
+            if deploy "$IMAGE_TAG"; then
+              printf '%s\n' "$IMAGE_TAG" > .whisper-image-tag
+            else
+              echo "Deploy of $IMAGE_TAG failed"
+              if [ -n "$PREVIOUS_TAG" ]; then
+                echo "Rolling back to $PREVIOUS_TAG"
+                deploy "$PREVIOUS_TAG" || echo "Rollback to $PREVIOUS_TAG failed"
+              fi
+              exit 1
+            fi
+
+      - name: Open or update deploy failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          script_stop: true  # Stops executing further commands in case of error
           script: |
-            export ACTUAL_PATH="${{ secrets.PROJECT_PATH }}/whisper-server"
-            cd "$ACTUAL_PATH"
-            
-            # Check if docker-compose.prod.yml exists (sanity check)
-            if [ ! -f docker-compose.prod.yml ]; then
-              echo "Error: docker-compose.prod.yml not found in $ACTUAL_PATH"
-              echo "Current directory contents:"
-              ls -la
-              exit 1
-            fi
+            const title = '[deploy] Production deploy failed';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `Deploy of \`${process.env.IMAGE_TAG}\` failed. Run: ${runUrl}`;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
 
-            # Create .env.prod file
-            echo "Creating .env.prod file..."
-            cat > .env.prod << EOL
-            SERVER_URL=${{ secrets.SERVER_URL }}
-            SQLITE_PASSWORD=${{ secrets.SQLITE_PASSWORD }}
-            VALKEY_PASSWORD=${{ secrets.VALKEY_PASSWORD }}
-            ADMIN_MAIL=${{ secrets.ADMIN_MAIL }}
-            SMTP_HOST=${{ secrets.SMTP_HOST }}
-            SMTP_USER=${{ secrets.SMTP_USER }}
-            SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-            ACCESS_TOKEN_SECRET=${{ secrets.ACCESS_TOKEN_SECRET }}
-            REFRESH_TOKEN_SECRET=${{ secrets.REFRESH_TOKEN_SECRET }}
-            WS_ACCESS_TOKEN_SECRET=${{ secrets.WS_ACCESS_TOKEN_SECRET }}
-            EOL
-
-            # Create data directory and Firebase JSON file
-            echo "Creating data directory if it doesn't exist..."
-            mkdir -p data
-            
-            echo "Creating Firebase JSON file..."
-            echo "${{ secrets.FIREBASE_JSON_BASE64 }}" | base64 --decode > data/firebase.json
-            
-            # Verify files were created
-            echo "Verifying file creation..."
-            if [ ! -f .env.prod ] || [ ! -f data/firebase.json ]; then
-              echo "Error: Required files not created"
-              exit 1
-            fi
-
-            # Stop running containers
-            echo "Stopping current containers..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod down || echo "No containers to stop"
-
-            # Build and start containers
-            echo "Building and starting containers..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-
-            # Wait for the service to start
-            echo "Waiting for service to start..."
-            sleep 10
-            
-            # Verify containers are running
-            echo "Checking container status..."
-            docker compose -f docker-compose.prod.yml ps
-      
-      - name: Notify Deployment Status
-        # This step will always run to report status
-        if: always()
-        run: |
-          if [ "${{ job.status }}" == "success" ]; then
-            echo "Deployment completed successfully!"
-          else
-            echo "Deployment failed! Please check logs for details."
-          fi
+      - name: Close deploy failure issue
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '[deploy] Production deploy failed';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            for (const issue of issues.filter((item) => item.title === title)) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: 'A later production deploy succeeded; closing this alert.',
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+              });
+            }

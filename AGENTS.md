@@ -7,6 +7,7 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 
 - build: `go build ./...`
 - test: `go test ./...`
+- e2e: `go test ./e2e/...` (needs Docker; starts Valkey via testcontainers)
 - lint: `golangci-lint run` (config in `.golangci.yml`; CI gates new lines only)
 - spec: `go run ./cmd/spec` — rewrites `openapi.json`; must be part of every commit that changes routes or models
 - locally: `docker compose -f docker-compose.dev.yml up -d` (Valkey) + env from `.env.dev`, then `go run .`
@@ -18,7 +19,7 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 3. Never edit `whisper_openapi_client_dart/lib` by hand. A contract change means: change the spec here, regenerate the client, bump the version in `whisper/pubspec.yaml`, all in one sequence.
 4. Do not weaken auth or encryption, not even "temporarily for debugging" (CORS, `CheckOrigin`, token validation).
 5. Do not add a dependency without justification in the PR.
-6. Do not change the DB schema without a migration (goose, phase 2) and do not change a Valkey payload without the `v` field.
+6. Do not change the DB schema without a migration (goose, in `database/migrations/`) and do not change a Valkey payload without the `v` field.
 7. Never disable a test or lint to get CI green. Fix it, or file an issue and escalate.
 8. Do not deploy without green CI; production only through a tag.
 9. Force-push only to your own feature branch, never to `main`.
