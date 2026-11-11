@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"jsfraz/whisper-server/utils"
 	"log/slog"
 	"time"
 
@@ -21,7 +22,7 @@ func RequestLogger() gin.HandlerFunc {
 			return
 		}
 
-		requestID := c.GetHeader(RequestIDHeader)
+		requestID := utils.SanitizeLogValue(c.GetHeader(RequestIDHeader))
 		if requestID == "" {
 			requestID = uuid.NewString()
 		}
@@ -34,13 +35,13 @@ func RequestLogger() gin.HandlerFunc {
 		attrs := []any{
 			"request_id", requestID,
 			"method", c.Request.Method,
-			"path", c.Request.URL.Path,
+			"path", utils.SanitizeLogValue(c.Request.URL.Path),
 			"status", c.Writer.Status(),
 			"duration_ms", time.Since(start).Milliseconds(),
-			"client_ip", c.ClientIP(),
+			"client_ip", utils.SanitizeLogValue(c.ClientIP()),
 		}
 		if len(c.Errors) > 0 {
-			attrs = append(attrs, "error", c.Errors.String())
+			attrs = append(attrs, "error", utils.SanitizeLogValue(c.Errors.String()))
 		}
 		slog.Info("request", attrs...)
 	}

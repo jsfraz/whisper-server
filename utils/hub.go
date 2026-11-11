@@ -138,7 +138,9 @@ func (h *Hub) Run() {
 
 					// Send push notification
 					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
-						slog.Warn("failed to send push notification", "user_id", privateMessage.ReceiverId, "error", err)
+						slog.Warn("failed to send push notification",
+							"user_id", SanitizeLogValue(strconv.FormatUint(privateMessage.ReceiverId, 10)),
+							"error", SanitizeLogValue(err.Error()))
 					}
 				}
 			}
