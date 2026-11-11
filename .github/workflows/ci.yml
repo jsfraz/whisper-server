@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Build, lint, test, spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and origin/main are needed by the oasdiff and lint gates
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Lint (new issues only)
+        # Legacy code is not gated; anything added since the PR base must be clean.
+        if: github.event_name == 'pull_request'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+          args: --new-from-rev=origin/${{ github.base_ref }}
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: OpenAPI spec matches routes
+        run: |
+          go run ./cmd/spec
+          git diff --exit-code -- openapi.json
+
+      - name: OpenAPI breaking changes
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'breaking-change')
+        run: |
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -z "$PREV" ]; then
+            echo "No release tag yet, nothing to compare against."
+            exit 0
+          fi
+          git show "$PREV:openapi.json" > /tmp/openapi-base.json
+          go install github.com/oasdiff/oasdiff@latest
+          "$(go env GOPATH)/bin/oasdiff" breaking /tmp/openapi-base.json openapi.json
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dependency scan
+        # Requires the SNYK_TOKEN secret; skipped nowhere, so the token must exist.
+        uses: snyk/actions/golang@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
