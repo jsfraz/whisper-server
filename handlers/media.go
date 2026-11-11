@@ -8,7 +8,9 @@ import (
 	"jsfraz/whisper-server/utils"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -115,6 +117,14 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 func DownloadMedia(c *gin.Context) {
 	id := c.Param("id")
 	userId, _ := c.Get("userId")
+
+	// Validate id to ensure it is a safe single path component.
+	// IDs are expected to be UUID strings.
+	uuidLike := regexp.MustCompile(`^[a-fA-F0-9-]{36}$`)
+	if !uuidLike.MatchString(id) || strings.Contains(id, "/") || strings.Contains(id, "\\") || strings.Contains(id, "..") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid media id"})
+		return
+	}
 
 	// Load metadata
 	found, meta, err := database.GetMediaMetadata(id)
