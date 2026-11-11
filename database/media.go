@@ -147,7 +147,12 @@ func SubscribeExpiredMedia() {
 			}
 			id := strings.TrimPrefix(m.Message, mediaKeyPrefix)
 			// Metadata key has already expired, just remove the file from disk
-			err := os.Remove(MediaFilePath(id))
+			path, err := MediaFilePath(id)
+			if err != nil {
+				slog.Error("failed to resolve expired media file path", "media_id", id, "error", err)
+				return
+			}
+			err = os.Remove(path)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				slog.Error("failed to delete expired media file", "media_id", id, "error", err)
 			}

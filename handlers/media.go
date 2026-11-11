@@ -76,7 +76,10 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	}
 	defer src.Close()
 
-	path := database.MediaFilePath(id)
+	path, err := database.MediaFilePath(id)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	dst, err := os.Create(path)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
