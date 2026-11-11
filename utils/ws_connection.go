@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 
 	"jsfraz/whisper-server/models"
@@ -24,11 +24,11 @@ func (c *WSConnection) Send(message models.WsResponse) {
 
 	binaryMessage, err := models.MarshalWsResponse(message)
 	if err != nil {
-		log.Printf("failed to marshal ws response: %v", err)
+		slog.Error("failed to marshal ws response", "error", err)
 		return
 	}
 	if err := c.Conn.WriteMessage(websocket.BinaryMessage, binaryMessage); err != nil {
-		log.Printf("failed to write ws message: %v", err)
+		slog.Error("failed to write ws message", "error", err)
 	}
 }
 

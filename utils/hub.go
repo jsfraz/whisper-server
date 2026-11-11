@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"jsfraz/whisper-server/models"
-	"log"
+	"log/slog"
 	"slices"
 	"strconv"
 	"sync"
@@ -138,7 +138,7 @@ func (h *Hub) Run() {
 
 					// Send push notification
 					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
-						log.Printf("failed to send push notification to user %d: %v", privateMessage.ReceiverId, err)
+						slog.Warn("failed to send push notification", "user_id", privateMessage.ReceiverId, "error", err)
 					}
 				}
 			}

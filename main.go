@@ -42,6 +42,9 @@ func main() {
 	}
 	singleton.Config = *config
 
+	// Structured logger (JSON in release, text in debug)
+	utils.InitLogger(config.GinMode)
+
 	// Store embedded mail templates
 	singleton.RegisterAdminTemplate = registerAdminTemplate
 	singleton.RegisterInviteTemplate = registerInviteTemplate

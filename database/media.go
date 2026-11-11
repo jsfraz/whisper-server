@@ -3,10 +3,9 @@ package database
 import (
 	"context"
 	"errors"
-	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +93,7 @@ func DeleteUserMedia(userId uint64) error {
 		for _, key := range result.Elements {
 			metaBytes, err := client.Do(context.Background(), client.B().Get().Key(key).Build()).AsBytes()
 			if err != nil && !errors.As(err, &valkeyErr) {
-				log.Println(err)
+				slog.Error("media cleanup failed", "error", err)
 				continue
 			}
 			if metaBytes == nil {
@@ -102,12 +101,12 @@ func DeleteUserMedia(userId uint64) error {
 			}
 			meta, err := models.MediaMetadataFromJson(metaBytes)
 			if err != nil {
-				log.Println(err)
+				slog.Error("media cleanup failed", "error", err)
 				continue
 			}
 			if meta.SenderId == userId || meta.ReceiverId == userId {
 				if err := DeleteMedia(meta.Id); err != nil {
-					log.Println(err)
+					slog.Error("media cleanup failed", "error", err)
 				}
 			}
 		}
@@ -135,7 +134,7 @@ func SubscribeExpiredMedia() {
 			// Metadata key has already expired, just remove the file from disk
 			err := os.Remove(MediaFilePath(id))
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				log.Println(fmt.Errorf("failed to delete expired media file %s: %w", id, err))
+				slog.Error("failed to delete expired media file", "media_id", id, "error", err)
 			}
 		},
 	})

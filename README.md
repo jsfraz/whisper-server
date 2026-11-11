@@ -6,6 +6,13 @@ For Whisper app, see [whisper](https://github.com/jsfraz/whisper) repository.
 
 Also see [Wiki](https://github.com/jsfraz/whisper-server/wiki)!
 
+## Architecture and operations
+
+- [Architecture](docs/architecture.md) - C4 context, containers and dependency rules
+- [Threat model](docs/threat-model.md) - STRIDE for auth/WS and media
+- [Runbook](docs/runbook.md) - restart, rollback, secret rotation
+- [ADRs](docs/adr/README.md) - accepted decisions
+
 ## Development
 
 ```bash

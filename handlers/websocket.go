@@ -6,7 +6,7 @@ import (
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,7 +22,7 @@ func WebSocketHandler(c *gin.Context) {
 	accessToken := c.Query("wsAccessToken")
 	if accessToken == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "wsAccessToken is required"})
-		log.Println("accessToken is required")
+		slog.Warn("websocket auth missing token")
 		return
 	}
 	// Validate access token

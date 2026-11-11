@@ -5,7 +5,7 @@ import (
 	"errors"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/aymerick/raymond"
@@ -46,13 +46,13 @@ func SubscribeNewInvites() {
 			result, err := client.Do(context.Background(), client.B().Get().Key("invite:"+m.Message).Build()).AsBytes()
 			// Return error except if is Valkey error
 			if err != nil && !errors.As(err, &valkeyErr) {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				return
 			}
 			// Get inviteData from JSON
 			inviteData, err := models.InviteFromJson(result)
 			if err != nil {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				return
 			}
 			// Mail variables
@@ -70,12 +70,12 @@ func SubscribeNewInvites() {
 			// Generate QR code
 			inviteJsonBytes, err := models.NewInviteData(utils.GetSingleton().Config.ServerUrl, m.Message, inviteData.ValidUntil).MarshalBinary()
 			if err != nil {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				return
 			}
 			qrBase64, err := utils.GetQrBytesFromJson(string(inviteJsonBytes))
 			if err != nil {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				return
 			}
 			// Render template
@@ -88,16 +88,16 @@ func SubscribeNewInvites() {
 				},
 			)
 			if err != nil {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				return
 			}
 			// Send mail
 			err = utils.SendMail(inviteData.Mail, subject, content)
 			if err != nil {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				return
 			}
-			log.Printf("Invite sent to %s, admin: %t", inviteData.Mail, inviteData.Admin)
+			slog.Info("invite sent", "mail", inviteData.Mail, "admin", inviteData.Admin)
 		},
 	})
 	c.Do(context.Background(), c.B().Subscribe().Channel("newInvite").Build())
@@ -153,7 +153,7 @@ func AdminInviteExists() (bool, error) {
 		for _, k := range result.Elements {
 			inviteDataBytes, err := client.Do(context.Background(), client.B().Get().Key(k).Build()).AsBytes()
 			if err != nil && !errors.As(err, &valkeyErr) {
-				log.Println(err)
+				slog.Error("invite processing failed", "error", err)
 				continue
 			}
 			if inviteDataBytes != nil {

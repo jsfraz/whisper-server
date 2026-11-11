@@ -3,6 +3,7 @@ package routes
 import (
 	"fmt"
 	"jsfraz/whisper-server/handlers"
+	"jsfraz/whisper-server/middlewares"
 	"jsfraz/whisper-server/utils"
 	"net/http"
 	"os"
@@ -51,14 +52,8 @@ func NewRouter() (*fizz.Fizz, error) {
 	engine := gin.New()
 	// Limit in-memory buffering of multipart uploads; larger files stream to a temp file
 	engine.MaxMultipartMemory = 8 << 20 // 8 MiB
-	// Logger middleware
-	if utils.GetSingleton().Config.GinMode != "release" {
-		engine.Use(gin.Logger())
-	} else {
-		engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-			SkipPaths: []string{"/ws", "/health"},
-		}))
-	}
+	// Logger middleware (structured, request id)
+	engine.Use(middlewares.RequestLogger())
 	// Recovery middleware
 	engine.Use(gin.Recovery())
 	// CORS config – mobile app only, no credentials needed

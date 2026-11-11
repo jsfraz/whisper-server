@@ -4,8 +4,8 @@ services:
 
   whisper-server:
     container_name: whisper-server
-    build: .
-    image: whisper-server
+    image: ghcr.io/jsfraz/whisper-server:${WHISPER_IMAGE_TAG:?WHISPER_IMAGE_TAG is required}
+    pull_policy: always
     restart: always
     ports:
        - "127.0.0.1:8081:8080"
