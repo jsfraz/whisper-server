@@ -58,10 +58,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Snyk CLI
+        uses: snyk/actions/setup@master
+
       - name: Dependency scan
-        # Requires the SNYK_TOKEN secret; skipped nowhere, so the token must exist.
-        uses: snyk/actions/golang@master
+        # Runs on the toolchain installed by setup-go. The snyk/actions container
+        # ships its own Go (1.27.3 with GOTOOLCHAIN=local), which refuses go.mod's
+        # 1.27.4 requirement.
+        run: snyk test --severity-threshold=high
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high
