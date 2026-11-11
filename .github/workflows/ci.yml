@@ -25,7 +25,7 @@ jobs:
       - name: Lint (new issues only)
         # Legacy code is not gated; anything added since the PR base must be clean.
         if: github.event_name == 'pull_request'
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.15.0
           args: --new-from-rev=origin/${{ github.base_ref }}
