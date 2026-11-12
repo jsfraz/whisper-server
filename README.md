@@ -13,6 +13,16 @@ Also see [Wiki](https://github.com/jsfraz/whisper-server/wiki)!
 - [Runbook](docs/runbook.md) - restart, rollback, secret rotation
 - [ADRs](docs/adr/README.md) - accepted decisions
 
+## AI / MCP tooling
+
+Developed with [OpenCode](https://opencode.ai); MCP servers live in the global config
+`~/.config/opencode/opencode.json`, not in this repository.
+
+- `golang` (`gopls mcp`) — Go diagnostics, symbol resolution, tests
+- `context7` — library documentation lookup
+- `dart` — only relevant when working on the Dart clients in the sibling repositories
+  (see the `whisper` app README for the full setup)
+
 ## Development
 
 ```bash

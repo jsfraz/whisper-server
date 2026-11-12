@@ -12,6 +12,11 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 - spec: `go run ./cmd/spec` — rewrites `openapi.json`; must be part of every commit that changes routes or models
 - locally: `docker compose -f docker-compose.dev.yml up -d` (Valkey) + env from `.env.dev`, then `go run .`
 
+## AI / MCP tooling
+
+`gopls mcp` is wired in the global OpenCode config (`~/.config/opencode/opencode.json`) as the
+`golang` server: go-to-definition, references, diagnostics, tests. Full server list in the README.
+
 ## Hard rules
 
 1. Never commit secrets, keys, `.env*` or Firebase credentials.
