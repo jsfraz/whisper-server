@@ -240,21 +240,24 @@ func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
 //	@return error
 func (h *Hub) SendPushNotification(userId uint64, title, body string) error {
 	client := GetSingleton().Valkey
-	// Get token by userId
-	token, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%d", userId)).Build()).AsBytes()
+	// Get Firebase Installation ID by userId
+	fid, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%d", userId)).Build()).AsBytes()
 	if err != nil {
-		return fmt.Errorf("failed to get token for user %d: %w", userId, err)
+		return fmt.Errorf("failed to get push target for user %d: %w", userId, err)
 	}
-	// Send push notification
-	_, err = GetSingleton().FirebaseMsg.Send(context.Background(), &messaging.Message{
+	// Message.Token accepts only FCM tokens, FIDs must go through multicast
+	resp, err := GetSingleton().FirebaseMsg.SendEachForMulticast(context.Background(), &messaging.MulticastMessage{
 		Notification: &messaging.Notification{
 			Title: title,
 			Body:  body,
 		},
-		Token: string(token),
+		Fids: []string{string(fid)},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to send push notification to user %d: %w", userId, err)
+	}
+	if resp.FailureCount > 0 {
+		return fmt.Errorf("failed to send push notification to user %d: %v", userId, resp.Responses[0].Error)
 	}
 	return nil
 }
