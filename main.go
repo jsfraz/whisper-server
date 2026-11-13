@@ -99,6 +99,9 @@ func main() {
 		database.SubscribeExpiredMedia()
 	}()
 
+	// Reconcile media files whose expiry notification was missed (restart, crash, outage)
+	go database.RunMediaSweeper(10 * time.Minute)
+
 	// Create admin invite if admin does not exist
 	err = database.CreateAdminInvite()
 	if err != nil {

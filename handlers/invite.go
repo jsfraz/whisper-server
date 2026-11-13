@@ -19,7 +19,7 @@ import (
 func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -47,7 +47,7 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 func GetAllInvites(c *gin.Context) (*[]models.Invite, error) {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}

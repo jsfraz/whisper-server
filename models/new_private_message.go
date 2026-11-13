@@ -6,7 +6,7 @@ import (
 )
 
 type NewPrivateMessageReceive struct {
-	ReceiverId uint64          `json:"receiverId" validate:"required"`
+	ReceiverId string          `json:"receiverId" validate:"required,uuid"`
 	Content    json.RawMessage `json:"content" validate:"required"`
 	Key        json.RawMessage `json:"key" validate:"required"`
 	Nonce      json.RawMessage `json:"nonce" validate:"required"`

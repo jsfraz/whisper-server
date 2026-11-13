@@ -11,8 +11,8 @@ import (
 // only the information required to authorize a download and clean up the file.
 type MediaMetadata struct {
 	Id         string    `json:"id"`
-	SenderId   uint64    `json:"senderId"`
-	ReceiverId uint64    `json:"receiverId"`
+	SenderId   string    `json:"senderId"`
+	ReceiverId string    `json:"receiverId"`
 	Size       int64     `json:"size"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
@@ -24,7 +24,7 @@ type MediaMetadata struct {
 //	@param receiverId
 //	@param size
 //	@return MediaMetadata
-func NewMediaMetadata(id string, senderId uint64, receiverId uint64, size int64) MediaMetadata {
+func NewMediaMetadata(id string, senderId string, receiverId string, size int64) MediaMetadata {
 	return MediaMetadata{
 		Id:         id,
 		SenderId:   senderId,
@@ -59,7 +59,7 @@ func MediaMetadataFromJson(jsonBytes []byte) (*MediaMetadata, error) {
 // UploadMediaInput is the multipart/form-data body for uploading an encrypted media file.
 type UploadMediaInput struct {
 	File       *multipart.FileHeader `form:"file" binding:"required"`
-	ReceiverId uint64                `form:"receiverId" binding:"required"`
+	ReceiverId string                `form:"receiverId" binding:"required,uuid"`
 }
 
 // MediaUploadResponse is returned after a successful upload.

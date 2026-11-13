@@ -16,7 +16,7 @@ import (
 //	@param id
 //	@return string
 //	@return error
-func GenerateToken(id uint64, lifespan int, secret string, tokenId *string) (string, error) {
+func GenerateToken(id string, lifespan int, secret string, tokenId *string) (string, error) {
 	// Payload
 	now := time.Now()
 	claims := jwt.MapClaims{}
@@ -32,13 +32,26 @@ func GenerateToken(id uint64, lifespan int, secret string, tokenId *string) (str
 	return token.SignedString([]byte(secret))
 }
 
+// Returns the user ID (UUID) from a token's subject claim.
+func userIdFromClaims(token *jwt.Token) (string, error) {
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid token claims")
+	}
+	userId, ok := claims["sub"].(string)
+	if !ok {
+		return "", fmt.Errorf("invalid subject claim")
+	}
+	return userId, nil
+}
+
 // Checks if given token is valid.
 //
 //	@param tokenStr
 //	@param secret
-//	@return uint64
+//	@return string
 //	@return error
-func TokenValid(tokenStr string, secret string) (uint64, *string, error) {
+func TokenValid(tokenStr string, secret string) (string, *string, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -46,18 +59,23 @@ func TokenValid(tokenStr string, secret string) (uint64, *string, error) {
 		return []byte(secret), nil
 	})
 	if err != nil {
-		return 0, nil, err
+		return "", nil, err
 	}
 	// User ID
-	claims, _ := token.Claims.(jwt.MapClaims)
-	userId := claims["sub"].(float64)
-	tokenId := claims["tokenId"]
+	userId, err := userIdFromClaims(token)
+	if err != nil {
+		return "", nil, err
+	}
+	tokenId := token.Claims.(jwt.MapClaims)["tokenId"]
 	var tokenIdStr *string
 	if tokenId != nil {
-		str := tokenId.(string)
+		str, ok := tokenId.(string)
+		if !ok {
+			return "", nil, fmt.Errorf("invalid tokenId claim")
+		}
 		tokenIdStr = &str
 	}
-	return uint64(userId), tokenIdStr, nil
+	return userId, tokenIdStr, nil
 }
 
 // Gets token from Gin context.
@@ -75,20 +93,14 @@ func ExtractTokenFromContext(c *gin.Context) string {
 // Gets user ID from JWT token signed with RSA key.
 //
 // @param tokenStr
-// @return uint64
+// @return string
 // @return error
-func GetUserIdFromToken(tokenStr string) (uint64, error) {
+func GetUserIdFromToken(tokenStr string) (string, error) {
 	token, _, err := jwt.NewParser().ParseUnverified(tokenStr, jwt.MapClaims{})
 	if err != nil {
-		return 0, err
+		return "", err
 	}
-	// User ID
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return 0, fmt.Errorf("invalid token claims")
-	}
-	userId := claims["sub"].(float64)
-	return uint64(userId), nil
+	return userIdFromClaims(token)
 }
 
 // Validates RSA JWT token.

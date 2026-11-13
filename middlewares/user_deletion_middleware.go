@@ -13,7 +13,7 @@ import (
 func UserDeletionMiddleware(c *gin.Context) {
 	userId, _ := c.Get("userId")
 	// Check if user is in delete list
-	toDelete, err := database.WillUserBeDeleted(userId.(uint64))
+	toDelete, err := database.WillUserBeDeleted(userId.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		c.AbortWithError(http.StatusInternalServerError, err)

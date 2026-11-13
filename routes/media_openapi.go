@@ -65,8 +65,8 @@ func addMediaOperations(gen *openapi.Generator) {
 							Description: "The encrypted media blob (nonce || mac || ciphertext). Its field name must be file.",
 						}},
 						"receiverId": {Schema: &openapi.Schema{
-							Type:        "integer",
-							Format:      "int64",
+							Type:        "string",
+							Format:      "uuid",
 							Description: "Id of the user the media is sent to.",
 						}},
 					},

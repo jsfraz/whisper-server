@@ -133,7 +133,7 @@ func WebSocketHandler(c *gin.Context) {
 
 			// Process message based on action type
 			utils.GetSingleton().Hub.Broadcast <- struct {
-				SenderId uint64
+				SenderId string
 				Message  models.WsMessage
 			}{
 				SenderId: conn.UserId,

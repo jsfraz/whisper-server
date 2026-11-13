@@ -76,6 +76,41 @@ Rotate one secret at a time, update the GitHub secret, redeploy, and verify
 | `FIREBASE_JSON_BASE64` | Push notifications fail until fixed; messages, media and WS delivery keep working. |
 | `SQLITE_PASSWORD` | **Do not rotate by editing `.env.prod`.** The database is encrypted with this key. Rekeying requires an offline backup and `PRAGMA rekey`, then a new secret. |
 
+## Host kernel: vm.overcommit_memory
+
+Valkey needs `vm.overcommit_memory=1`; with the default `0` a background save
+(or replication) can fail under low memory. The setting is global to the
+kernel and is **not** namespaced, so Docker cannot set it with `sysctls:`.
+Both compose files therefore ship a one-shot `whisper-valkey-sysctl` service:
+it bind-mounts the single host file `/proc/sys/vm/overcommit_memory` and writes
+`1` into it (`docker compose up` runs it again on every deploy). It needs no
+privileged mode and no extra capabilities, and it prints a warning instead of
+failing when the host does not expose the file.
+
+Verify:
+
+```bash
+cat /proc/sys/vm/overcommit_memory   # 1
+docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env.prod" logs whisper-valkey-sysctl
+```
+
+If the write is refused (rootless Docker, Windows/macOS host), set it on the
+host once and make it persistent:
+
+```bash
+echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/99-valkey.conf
+sudo sysctl --system
+```
+
+## Media files outlive their TTL?
+
+Media metadata lives in Valkey with a TTL; the file on disk is deleted by the
+pub/sub listener `SubscribeExpiredMedia`, which only fires while the server is
+running and subscribed. A periodic sweep (every 10 minutes, and once at
+startup) reconciles disk against Valkey: a file whose `media:<id>` key is gone
+is removed, and abandoned `*.part` uploads older than an hour are removed. A
+sweep that finds files to delete logs `removed orphaned media files`.
+
 ## Database backup
 
 Stop the server before copying the SQLite file so the backup is consistent:

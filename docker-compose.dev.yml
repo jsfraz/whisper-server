@@ -28,7 +28,20 @@ services:
   #    - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
   #    - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
-  # TODO WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+  # Valkey needs vm.overcommit_memory=1 on the host, otherwise a background save (or
+  # replication) can fail under low memory. The setting is global to the kernel, not
+  # namespaced, so `sysctls:` cannot set it; this one-shot binds the host file and writes
+  # it without privileged mode. See docs/runbook.md if the host does not expose /proc/sys.
+  whisper-valkey-sysctl:
+    image: valkey/valkey:9-alpine
+    container_name: whisper-valkey-sysctl-dev
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 1 > /mnt/overcommit_memory && echo 'vm.overcommit_memory=1' || echo 'WARNING: could not set vm.overcommit_memory, set it on the host, see docs/runbook.md'"]
+    volumes:
+      # Bind the single sysctl file; runc refuses a bind mount inside /proc.
+      - /proc/sys/vm/overcommit_memory:/mnt/overcommit_memory
+
   whisper-valkey:
     image: valkey/valkey:9-alpine
     container_name: whisper-valkey-dev

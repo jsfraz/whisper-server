@@ -8,7 +8,6 @@ import (
 	"jsfraz/whisper-server/models"
 	"log/slog"
 	"slices"
-	"strconv"
 	"sync"
 
 	messaging "firebase.google.com/go/v4/messaging"
@@ -23,7 +22,7 @@ type Hub struct {
 	// Channel for broadcasting messages to all subscribed connections
 	// Anonymous struct is here for pairing senderId and message
 	Broadcast chan struct {
-		SenderId uint64
+		SenderId string
 		Message  models.WsMessage
 	}
 	// Channel for registering new WebSocket connections
@@ -41,7 +40,7 @@ func NewHub() *Hub {
 	return &Hub{
 		Connections: make(map[*WSConnection]bool),
 		Broadcast: make(chan struct {
-			SenderId uint64
+			SenderId string
 			Message  models.WsMessage
 		}),
 		Register:   make(chan *WSConnection),
@@ -139,7 +138,7 @@ func (h *Hub) Run() {
 					// Send push notification
 					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
 						slog.Warn("failed to send push notification",
-							"user_id", SanitizeLogValue(strconv.FormatUint(privateMessage.ReceiverId, 10)),
+							"user_id", SanitizeLogValue(privateMessage.ReceiverId),
 							"error", SanitizeLogValue(err.Error()))
 					}
 				}
@@ -154,7 +153,7 @@ func (h *Hub) Run() {
 //
 //	@param senderId
 //	@param err
-func (h *Hub) sendError(senderId uint64, err error) {
+func (h *Hub) sendError(senderId string, err error) {
 	for conn := range h.Connections {
 		if conn.UserId == senderId {
 			conn.SendError(err)
@@ -168,7 +167,7 @@ func (h *Hub) sendError(senderId uint64, err error) {
 //	@param userId
 //	@return bool
 //	@return error
-func (h *Hub) userExistsById(userId uint64) (bool, error) {
+func (h *Hub) userExistsById(userId string) (bool, error) {
 	var count int64
 	err := GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
@@ -183,7 +182,7 @@ func (h *Hub) userExistsById(userId uint64) (bool, error) {
 //	@param message
 //	@param ttl
 //	@return error
-func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl int) error {
+func (h *Hub) pushMessage(receiverId string, message models.PrivateMessage, ttl int) error {
 	// Marshall JSON
 	m, err := message.MarshalBinary()
 	if err != nil {
@@ -191,7 +190,7 @@ func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl 
 	}
 	// Push
 	client := GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("msg:%d_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
+	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("msg:%s_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
 }
 
 // Check if user with given ID will be deleted (O(1) with SET).
@@ -199,9 +198,9 @@ func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl 
 //	@param userId
 //	@return bool
 //	@return error
-func (h *Hub) willUserBeDeleted(userId uint64) (bool, error) {
+func (h *Hub) willUserBeDeleted(userId string) (bool, error) {
 	client := GetSingleton().Valkey
-	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).AsBool()
+	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(userId).Build()).AsBool()
 	if err != nil {
 		return false, err
 	}
@@ -211,10 +210,10 @@ func (h *Hub) willUserBeDeleted(userId uint64) (bool, error) {
 // Deletes users and sends delete message. Returns slice of online users that have been deleted.
 //
 //	@param ids
-func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
+func (h *Hub) DeleteUsers(ids []string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	var online []uint64 = []uint64{}
+	var online []string = []string{}
 	for conn := range h.Connections {
 		// Find online user
 		if slices.Contains(ids, conn.UserId) {
@@ -238,12 +237,12 @@ func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
 //	@param title
 //	@param body
 //	@return error
-func (h *Hub) SendPushNotification(userId uint64, title, body string) error {
+func (h *Hub) SendPushNotification(userId string, title, body string) error {
 	client := GetSingleton().Valkey
 	// Get Firebase Installation ID by userId
-	fid, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%d", userId)).Build()).AsBytes()
+	fid, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%s", userId)).Build()).AsBytes()
 	if err != nil {
-		return fmt.Errorf("failed to get push target for user %d: %w", userId, err)
+		return fmt.Errorf("failed to get push target for user %s: %w", userId, err)
 	}
 	// Message.Token accepts only FCM tokens, FIDs must go through multicast
 	resp, err := GetSingleton().FirebaseMsg.SendEachForMulticast(context.Background(), &messaging.MulticastMessage{
@@ -254,10 +253,10 @@ func (h *Hub) SendPushNotification(userId uint64, title, body string) error {
 		Fids: []string{string(fid)},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to send push notification to user %d: %w", userId, err)
+		return fmt.Errorf("failed to send push notification to user %s: %w", userId, err)
 	}
 	if resp.FailureCount > 0 {
-		return fmt.Errorf("failed to send push notification to user %d: %v", userId, resp.Responses[0].Error)
+		return fmt.Errorf("failed to send push notification to user %s: %v", userId, resp.Responses[0].Error)
 	}
 	return nil
 }

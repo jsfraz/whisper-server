@@ -11,7 +11,7 @@ import (
 
 type WSConnection struct {
 	Conn    *websocket.Conn
-	UserId  uint64
+	UserId  string
 	writeMu sync.Mutex
 }
 

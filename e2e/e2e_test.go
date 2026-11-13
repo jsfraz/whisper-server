@@ -86,7 +86,7 @@ func TestE2E(t *testing.T) {
 		e.sendMessage(t, senderConn, receiver.Id, `"online-ciphertext"`)
 		message := e.readMessage(t, receiverConn)
 		if message.SenderId != sender.Id || message.RecipientOnline != true {
-			t.Fatalf("unexpected message: sender %d, online %t", message.SenderId, message.RecipientOnline)
+			t.Fatalf("unexpected message: sender %s, online %t", message.SenderId, message.RecipientOnline)
 		}
 	})
 
@@ -106,7 +106,7 @@ func TestE2E(t *testing.T) {
 		defer func() { _ = receiverConn.Close() }()
 		message := e.readMessage(t, receiverConn)
 		if message.SenderId != sender.Id || message.RecipientOnline {
-			t.Fatalf("unexpected queued message: sender %d, online %t", message.SenderId, message.RecipientOnline)
+			t.Fatalf("unexpected queued message: sender %s, online %t", message.SenderId, message.RecipientOnline)
 		}
 		if string(message.Content) != `"offline-ciphertext"` {
 			t.Fatalf("unexpected content: %s", message.Content)
@@ -146,6 +146,35 @@ func TestE2E(t *testing.T) {
 		}
 		if status := e.doJSON(t, http.MethodGet, "/api/media/"+mediaID, nil, receiverTokens.AccessToken, nil); status != http.StatusNotFound {
 			t.Fatalf("download after confirm status: %d", status)
+		}
+	})
+
+	t.Run("sweeper removes media whose expiry notification was missed", func(t *testing.T) {
+		sender := e.register(t, "sweepsender")
+		receiver := e.register(t, "sweepreceiver")
+		senderTokens := e.authenticate(t, sender)
+
+		liveID := e.uploadMedia(t, senderTokens.AccessToken, receiver.Id, []byte("live"))
+		orphanID := e.uploadMedia(t, senderTokens.AccessToken, receiver.Id, []byte("orphan"))
+
+		// Simulate an expiry notification that never reached the subscriber
+		client := utils.GetSingleton().Valkey
+		if err := client.Do(context.Background(), client.B().Del().Key("media:"+orphanID).Build()).Error(); err != nil {
+			t.Fatal(err)
+		}
+
+		removed, err := database.SweepOrphanedMedia()
+		if err != nil {
+			t.Fatalf("sweep: %v", err)
+		}
+		if removed != 1 {
+			t.Fatalf("sweep removed %d files, want 1", removed)
+		}
+		if _, err := os.Stat(filepath.Join(e.mediaDir, orphanID)); !os.IsNotExist(err) {
+			t.Fatalf("orphaned file still on disk: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(e.mediaDir, liveID)); err != nil {
+			t.Fatalf("live media file was removed: %v", err)
 		}
 	})
 }
@@ -313,9 +342,9 @@ func (e *env) dial(token string) (*websocket.Conn, error) {
 	return conn, nil
 }
 
-func (e *env) sendMessage(t *testing.T, conn *websocket.Conn, receiverID uint64, content string) {
+func (e *env) sendMessage(t *testing.T, conn *websocket.Conn, receiverID string, content string) {
 	t.Helper()
-	payload := json.RawMessage(fmt.Sprintf(`{"receiverId":%d,"content":%s,"key":"key","nonce":"nonce","mac":"mac","sentAt":%q}`,
+	payload := json.RawMessage(fmt.Sprintf(`{"receiverId":%q,"content":%s,"key":"key","nonce":"nonce","mac":"mac","sentAt":%q}`,
 		receiverID, content, time.Now().UTC().Format(time.RFC3339Nano)))
 	message, err := json.Marshal(models.WsMessage{Type: models.WsMessageTopicMessage, Payload: payload})
 	if err != nil {
@@ -349,7 +378,7 @@ func (e *env) readMessage(t *testing.T, conn *websocket.Conn) models.PrivateMess
 	return response.Payload[0]
 }
 
-func (e *env) uploadMedia(t *testing.T, accessToken string, receiverID uint64, ciphertext []byte) string {
+func (e *env) uploadMedia(t *testing.T, accessToken string, receiverID string, ciphertext []byte) string {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -360,7 +389,7 @@ func (e *env) uploadMedia(t *testing.T, accessToken string, receiverID uint64, c
 	if _, err := part.Write(ciphertext); err != nil {
 		t.Fatal(err)
 	}
-	if err := writer.WriteField("receiverId", fmt.Sprintf("%d", receiverID)); err != nil {
+	if err := writer.WriteField("receiverId", receiverID); err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Close(); err != nil {

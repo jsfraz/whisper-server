@@ -6,7 +6,7 @@ import (
 )
 
 type PrivateMessage struct {
-	SenderId        uint64          `json:"senderId" validate:"required"`
+	SenderId        string          `json:"senderId" validate:"required"`
 	Content         json.RawMessage `json:"content" validate:"required"`
 	Key             json.RawMessage `json:"key" validate:"required"`
 	Nonce           json.RawMessage `json:"nonce" validate:"required"`
@@ -20,7 +20,7 @@ type PrivateMessage struct {
 //	@param senderId
 //	@param content
 //	@return PrivateMessage
-func NewPrivateMessage(senderId uint64, content json.RawMessage, key json.RawMessage, nonce json.RawMessage, mac json.RawMessage, sentAt time.Time, recipientOnline bool) PrivateMessage {
+func NewPrivateMessage(senderId string, content json.RawMessage, key json.RawMessage, nonce json.RawMessage, mac json.RawMessage, sentAt time.Time, recipientOnline bool) PrivateMessage {
 	return PrivateMessage{
 		SenderId:        senderId,
 		Content:         content,

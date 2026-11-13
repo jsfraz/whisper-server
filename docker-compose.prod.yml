@@ -29,6 +29,19 @@ services:
       - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
       - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
+  # Valkey needs vm.overcommit_memory=1 on the host (background saves fail under low
+  # memory otherwise). It is a kernel-wide setting, not namespaced, so it cannot be set
+  # with `sysctls:`; this one-shot writes the host file without privileged mode.
+  whisper-valkey-sysctl:
+    image: valkey/valkey:9-alpine
+    container_name: whisper-valkey-sysctl
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 1 > /mnt/overcommit_memory && echo 'vm.overcommit_memory=1' || echo 'WARNING: could not set vm.overcommit_memory, set it on the host, see docs/runbook.md'"]
+    volumes:
+      # Bind the single sysctl file; runc refuses a bind mount inside /proc.
+      - /proc/sys/vm/overcommit_memory:/mnt/overcommit_memory
+
   whisper-valkey:
     image: valkey/valkey:9-alpine
     container_name: whisper-valkey

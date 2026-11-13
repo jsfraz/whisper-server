@@ -38,7 +38,7 @@ func UploadMedia(c *gin.Context) {
 
 func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*models.MediaUploadResponse, error) {
 	senderId, _ := c.Get("userId")
-	senderIdUint := senderId.(uint64)
+	senderIdUint := senderId.(string)
 
 	// Enforce maximum upload size
 	if request.File.Size > utils.GetSingleton().Config.MediaMaxUploadSize {
@@ -80,25 +80,34 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	dst, err := os.Create(path)
+	// Write under the temp suffix first; the file is renamed into place only once its
+	// metadata exists, so the media sweeper can never delete an upload in flight.
+	tmpPath := path + database.MediaUploadTempSuffix
+	dst, err := os.Create(tmpPath)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	written, err := io.Copy(dst, src)
 	if err != nil {
 		dst.Close()
-		os.Remove(path)
+		os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if err := dst.Close(); err != nil {
-		os.Remove(path)
+		os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
 	// Store metadata in Valkey with TTL
 	meta := models.NewMediaMetadata(id, senderIdUint, request.ReceiverId, written)
 	if err := database.StoreMediaMetadata(meta, utils.GetSingleton().Config.MediaTtl); err != nil {
-		os.Remove(path)
+		os.Remove(tmpPath)
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		database.DeleteMedia(id)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
@@ -131,7 +140,7 @@ func DownloadMedia(c *gin.Context) {
 	}
 
 	// Only the intended receiver may download
-	if meta.ReceiverId != userId.(uint64) {
+	if meta.ReceiverId != userId.(string) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to download this media"})
 		return
 	}
@@ -179,7 +188,7 @@ func ConfirmMediaDownload(c *gin.Context, request *models.MediaIdUri) error {
 	}
 
 	// Only the intended receiver may delete
-	if meta.ReceiverId != userId.(uint64) {
+	if meta.ReceiverId != userId.(string) {
 		return c.AbortWithError(http.StatusForbidden, errors.New("not authorized to delete this media"))
 	}
 

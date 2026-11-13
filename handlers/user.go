@@ -20,7 +20,7 @@ import (
 func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -28,7 +28,7 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get users"))
 	}
 	// Get users
-	users, err := database.GetAllUsersExceptUser(userId.(uint64))
+	users, err := database.GetAllUsersExceptUser(userId.(string))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -43,7 +43,7 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -51,7 +51,7 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to delete users"))
 	}
 	// Check if user is deleting self
-	if slices.Contains(request.Ids, userId.(uint64)) {
+	if slices.Contains(request.Ids, userId.(string)) {
 		return c.AbortWithError(http.StatusInternalServerError, errors.New("cannot delete self"))
 	}
 	// Check if user is already in list
@@ -61,7 +61,7 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	}
 	for _, userId := range request.Ids {
 		if slices.Contains(toDelete, userId) {
-			return c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("user %d is already in delete list", userId))
+			return c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("user %s is already in delete list", userId))
 		}
 	}
 	// Push delete to Valkey
@@ -93,7 +93,7 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 //	@return error
 func SearchUsers(c *gin.Context, request *models.UsernameQuery) (*[]models.User, error) {
 	userId, _ := c.Get("userId")
-	users, err := database.SearchUsersByUsername(request.Username, userId.(uint64))
+	users, err := database.SearchUsersByUsername(request.Username, userId.(string))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -113,7 +113,7 @@ func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, 
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !exists {
-		return nil, c.AbortWithError(http.StatusNotFound, fmt.Errorf("user with id %d not found", request.Id))
+		return nil, c.AbortWithError(http.StatusNotFound, fmt.Errorf("user with id %s not found", request.Id))
 	}
 	// Get user
 	user, err := database.GetUserById(request.Id)
@@ -130,12 +130,12 @@ func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, 
 func DeleteMe(c *gin.Context) error {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Delete user
-	err = database.DeleteUserById(userId.(uint64))
+	err = database.DeleteUserById(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -149,13 +149,13 @@ func DeleteMe(c *gin.Context) error {
 	}
 
 	// Delete messages for the user
-	err = database.DeleteUserPrivateMessages(userId.(uint64))
+	err = database.DeleteUserPrivateMessages(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
 	// Delete media for the user
-	err = database.DeleteUserMedia(userId.(uint64))
+	err = database.DeleteUserMedia(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}

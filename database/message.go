@@ -13,10 +13,10 @@ import (
 //	@param userId
 //	@return []string
 //	@return error
-func GetAllUserPrivateMessageKeys(userId uint64) ([]string, error) {
+func GetAllUserPrivateMessageKeys(userId string) ([]string, error) {
 	client := utils.GetSingleton().Valkey
 	// Create pattern for user's messages with msg: prefix
-	pattern := fmt.Sprintf("msg:%d_*", userId)
+	pattern := fmt.Sprintf("msg:%s_*", userId)
 	// Use SCAN to get all matching keys
 	var cursor uint64 = 0
 	var keys []string
@@ -40,7 +40,7 @@ func GetAllUserPrivateMessageKeys(userId uint64) ([]string, error) {
 //	@param userId
 //	@return *[]models.PrivateMessage
 //	@return error
-func GetUserPrivateMessages(userId uint64) (*[]models.PrivateMessage, error) {
+func GetUserPrivateMessages(userId string) (*[]models.PrivateMessage, error) {
 	var messages []models.PrivateMessage = []models.PrivateMessage{}
 	keys, err := GetAllUserPrivateMessageKeys(userId)
 	if err != nil {
@@ -82,7 +82,7 @@ func GetUserPrivateMessages(userId uint64) (*[]models.PrivateMessage, error) {
 //
 //	@param userId
 //	@return error
-func DeleteUserPrivateMessages(userId uint64) error {
+func DeleteUserPrivateMessages(userId string) error {
 	keys, err := GetAllUserPrivateMessageKeys(userId)
 	if err != nil {
 		return err

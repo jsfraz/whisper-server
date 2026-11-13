@@ -32,7 +32,7 @@ Standard backlog, not silently accepted.
 | Spoofing | Path traversal via media id | `MediaFilePath` uses `filepath.Base`; ids are UUIDs | server E2E + code review |
 | Tampering | Server alters media bytes | AES-GCM MAC is verified by the client after download | app E2E: media upload sends only ciphertext and receiver decrypts it |
 | Information disclosure | Server reads or infers media | Server stores the encrypted blob and no MIME/plaintext; type, key and caption travel inside the encrypted message | `e2e`: stored and downloaded bytes equal the uploaded ciphertext |
-| Information disclosure | Media outlives its message | Valkey TTL removes metadata; a subscriber deletes the file | **Partial** - deletion is not atomic if the subscriber is down; see backlog |
+| Information disclosure | Media outlives its message | Valkey TTL removes metadata; a subscriber deletes the file, and a periodic sweep removes any file whose metadata key is gone | `e2e`: sweeper removes media whose expiry notification was missed |
 | Denial of service | Oversized upload | `MEDIA_MAX_UPLOAD_SIZE` is enforced before writing | no dedicated test |
 | Denial of service | Unbounded uploads/downloads | No per-user rate limiting | **Missing** - see backlog |
 
