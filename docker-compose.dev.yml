@@ -47,6 +47,10 @@ services:
     container_name: whisper-valkey-dev
     # restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning --notify-keyspace-events Ex"
+    # The server runs on the host during development (go run .), so the port is
+    # published on loopback only.
+    ports:
+      - "127.0.0.1:6379:6379"
     volumes:
       - valkey_data:/data
 
