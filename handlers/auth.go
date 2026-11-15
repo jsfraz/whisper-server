@@ -26,7 +26,7 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 	}
 	// Check if invite exists
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("invite does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorInviteDoesNotExist))
 	}
 	// Unmarshall invite data
 	inviteData, err := models.InviteFromJson(inviteDataBytes)
@@ -48,7 +48,7 @@ func CreateUser(c *gin.Context, request *models.Register) (*models.User, error) 
 	}
 	if taken {
 		restoreInvite()
-		return nil, c.AbortWithError(http.StatusConflict, errors.New("username already taken"))
+		return nil, c.AbortWithError(http.StatusConflict, errors.New(utils.ErrorUsernameAlreadyTaken))
 	}
 	// Validate public key (add newlines to start/end)
 	// publicKey := strings.Replace(strings.Replace(request.PublicKey, "-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n", 1), "-----END PUBLIC KEY-----", "\n-----END PUBLIC KEY-----", 1)
@@ -97,7 +97,7 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 	// A malformed token is the client's problem, not a server error.
 	userId, err := utils.GetUserIdFromToken(request.Token)
 	if err != nil {
-		return nil, c.AbortWithError(http.StatusUnauthorized, err)
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorInvalidToken))
 	}
 	// Check if user exists
 	exists, err := database.UserExistsById(userId)
@@ -106,7 +106,7 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 	}
 	// Current user does not exist
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorCurrentUserDoesNotExist))
 	}
 	// Get user public key
 	publicKeyPem, err := database.GetUserPublicKey(userId)
@@ -120,20 +120,20 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 	// Validate token
 	err = utils.ValidateRsaJwtToken(request.Token, publicKey)
 	if err != nil {
-		return nil, c.AbortWithError(http.StatusUnauthorized, err)
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorInvalidToken))
 	}
 	// The signature is good, so the claim is trustworthy: spend the challenge.
 	// A token without one, or a replayed token, is refused.
 	challenge, err := utils.GetStringClaimFromToken(request.Token, "nonce")
 	if err != nil {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("login token has no challenge"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorLoginChallengeMissing))
 	}
 	valid, err := database.ConsumeChallenge(challenge)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !valid {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("login token challenge is unknown or already used"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorLoginChallengeUsed))
 	}
 	// Generate access token
 	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil, utils.TokenTypeAccess)
@@ -164,11 +164,11 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 	// Validate token and get user id
 	userId, tokenId, err := utils.TokenValid(refresh.RefreshToken, utils.GetSingleton().Config.RefreshTokenSecret, utils.TokenTypeRefresh)
 	if err != nil {
-		return nil, c.AbortWithError(http.StatusUnauthorized, err)
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorInvalidToken))
 	}
 	// A token without an id predates revocation and is not accepted.
 	if tokenId == nil {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("refresh token is not revocable"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorRefreshTokenNotRevocable))
 	}
 	// The session must be live and is spent by this call: a stolen refresh
 	// token is only usable once, and the client gets a new one.
@@ -177,7 +177,7 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !live {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("refresh session was revoked or already used"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorRefreshSessionRevoked))
 	}
 	// Check if user exists
 	exists, err := database.UserExistsById(userId)
@@ -186,7 +186,7 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 	}
 	// Current user does not exist
 	if !exists {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorCurrentUserDoesNotExist))
 	}
 	// Generate access token
 	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil, utils.TokenTypeAccess)

@@ -144,7 +144,7 @@ func (h *Hub) handle(senderId string, message models.WsMessage) {
 	case models.WsMessageTopicAck:
 		h.handleAck(senderId, message.Payload)
 	default:
-		h.sendError(senderId, errors.New("unsupported message type"))
+		h.sendError(senderId, errors.New(ErrorUnsupportedMessageType))
 	}
 }
 
@@ -164,17 +164,17 @@ func (h *Hub) connectionOf(userId string) *WSConnection {
 func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 	var privateMessage models.NewPrivateMessageReceive
 	if err := json.Unmarshal(payload, &privateMessage); err != nil {
-		h.sendError(senderId, err)
+		h.sendError(senderId, errors.New(ErrorInvalidMessage))
 		return
 	}
 	// Validate private message
 	if err := wsValidator.Struct(privateMessage); err != nil {
-		h.sendError(senderId, err)
+		h.sendError(senderId, errors.New(ErrorInvalidMessage))
 		return
 	}
 	// The timestamp keys the queue and the dedup, so it has to be close to now.
 	if !models.IsSentAtPlausible(privateMessage.SentAt) {
-		h.sendError(senderId, errors.New("message timestamp is not plausible"))
+		h.sendError(senderId, errors.New(ErrorImplausibleTimestamp))
 		return
 	}
 	// The socket was authenticated once; the account may be gone since.
@@ -184,7 +184,7 @@ func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 		return
 	}
 	if !active {
-		h.sendError(senderId, errors.New("account is no longer active"))
+		h.sendError(senderId, errors.New(ErrorAccountInactive))
 		if conn := h.connectionOf(senderId); conn != nil {
 			conn.Close()
 		}
@@ -192,7 +192,7 @@ func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 	}
 	// Check whether user is sending message to self (in production)
 	if senderId == privateMessage.ReceiverId && GetSingleton().Config.GinMode == "release" {
-		h.sendError(senderId, errors.New("can not send message to self"))
+		h.sendError(senderId, errors.New(ErrorCannotSendToSelf))
 		return
 	}
 	// Check if message is being sent to user that will be deleted
@@ -202,7 +202,7 @@ func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 		return
 	}
 	if toDelete {
-		h.sendError(senderId, errors.New("can not send message to this user"))
+		h.sendError(senderId, errors.New(ErrorCannotSendToUser))
 		return
 	}
 	// Check if user exists
@@ -212,7 +212,7 @@ func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 		return
 	}
 	if !exists {
-		h.sendError(senderId, errors.New("user does not exist"))
+		h.sendError(senderId, errors.New(ErrorUserNotFound))
 		return
 	}
 	// A resend after a lost delivery ack must not deliver a second copy.
@@ -256,11 +256,11 @@ func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 func (h *Hub) handleAck(receiverId string, payload json.RawMessage) {
 	var ack models.WsMessageAck
 	if err := json.Unmarshal(payload, &ack); err != nil {
-		h.sendError(receiverId, err)
+		h.sendError(receiverId, errors.New(ErrorInvalidMessage))
 		return
 	}
 	if err := wsValidator.Struct(ack); err != nil {
-		h.sendError(receiverId, err)
+		h.sendError(receiverId, errors.New(ErrorInvalidMessage))
 		return
 	}
 	keys := make([]string, 0, len(ack.Messages))
@@ -277,7 +277,8 @@ func (h *Hub) handleAck(receiverId string, payload json.RawMessage) {
 	}
 }
 
-// Send error response to sender
+// Send error response to sender. Only a client-facing code reaches the client;
+// a server side failure is logged and replaced by the generic code.
 //
 //	@param senderId
 //	@param err
@@ -390,7 +391,7 @@ func (h *Hub) pushMessage(receiverId string, message models.PrivateMessage, ttl 
 		}
 		if queued > maxQueued {
 			_, _ = client.Do(context.Background(), client.B().Decr().Key(counterKey).Build()).AsInt64()
-			return errors.New("receiver's queue is full")
+			return errors.New(ErrorReceiverQueueFull)
 		}
 	}
 	// Push

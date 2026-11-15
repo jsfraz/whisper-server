@@ -35,31 +35,30 @@ func WebSocketHandler(c *gin.Context) {
 		accessToken = c.Query("wsAccessToken")
 	}
 	if accessToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "access token is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorAccessTokenRequired})
 		slog.Warn("websocket auth missing token")
 		return
 	}
 	// Validate access token
 	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret, utils.TokenTypeWs)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorInvalidToken})
 		return
 	}
 	// Check if token exists in Valkey
 	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to load ws access token", "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		return
 	}
 	if !exists {
-		err = errors.New("access token not found")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorAccessTokenNotFound})
 		return
 	}
 	// Check if provided token and token from Valkey are the same
 	if accessToken != accessTokenById {
-		err = errors.New("access token mismatch")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorAccessTokenMismatch})
 		return
 	}
 
@@ -70,7 +69,8 @@ func WebSocketHandler(c *gin.Context) {
 	// Upgrade HTTP connection to WebSocket
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Warn("ws upgrade failed", "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		return
 	}
 
@@ -129,13 +129,13 @@ func WebSocketHandler(c *gin.Context) {
 			// Flood protection: close the connection instead of buffering
 			// unbounded work for everyone.
 			if !limiter.Allow() {
-				conn.SendError(errors.New("too many messages"))
+				conn.SendError(errors.New(utils.ErrorTooManyMessages))
 				return
 			}
 
 			// Check message type
 			if messageType != websocket.BinaryMessage {
-				err = errors.New("invalid message type, only binary messages are supported")
+				err = errors.New(utils.ErrorInvalidMessageType)
 				conn.SendError(err)
 				continue
 			}
@@ -144,14 +144,14 @@ func WebSocketHandler(c *gin.Context) {
 			var msg models.WsMessage
 			err = json.Unmarshal(payload, &msg)
 			if err != nil {
-				conn.SendError(err)
+				conn.SendError(errors.New(utils.ErrorInvalidMessage))
 				continue
 			}
 
 			// Validate message
 			err = validator.Struct(msg)
 			if err != nil {
-				conn.SendError(err)
+				conn.SendError(errors.New(utils.ErrorInvalidMessage))
 				continue
 			}
 

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
@@ -27,7 +26,7 @@ func GetAllUsers(c *gin.Context) (*[]models.User, error) {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get users"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorNotAuthorized))
 	}
 	// Get users
 	users, err := database.GetAllUsersExceptUser(userId.(string))
@@ -50,11 +49,11 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to delete users"))
+		return c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorNotAuthorized))
 	}
 	// Check if user is deleting self
 	if slices.Contains(request.Ids, userId.(string)) {
-		return c.AbortWithError(http.StatusInternalServerError, errors.New("cannot delete self"))
+		return c.AbortWithError(http.StatusInternalServerError, errors.New(utils.ErrorCannotDeleteSelf))
 	}
 	// Check if user is already in list
 	toDelete, err := database.GetAllUsersToDelete()
@@ -63,7 +62,7 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	}
 	for _, userId := range request.Ids {
 		if slices.Contains(toDelete, userId) {
-			return c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("user %s is already in delete list", userId))
+			return c.AbortWithError(http.StatusInternalServerError, errors.New(utils.ErrorUserAlreadyInDeleteList))
 		}
 	}
 	// Push delete to Valkey
@@ -106,7 +105,7 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 func SearchUsers(c *gin.Context, request *models.UsernameQuery) (*[]models.User, error) {
 	username := strings.TrimSpace(request.Username)
 	if username == "" {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New("username is required"))
+		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorUsernameRequired))
 	}
 	userId, _ := c.Get("userId")
 	users, err := database.SearchUsersByUsername(username, userId.(string))
@@ -129,7 +128,7 @@ func GetUserById(c *gin.Context, request *models.IdQueryRequest) (*models.User, 
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !exists {
-		return nil, c.AbortWithError(http.StatusNotFound, fmt.Errorf("user with id %s not found", request.Id))
+		return nil, c.AbortWithError(http.StatusNotFound, errors.New(utils.ErrorUserNotFound))
 	}
 	// Get user
 	user, err := database.GetUserById(request.Id)

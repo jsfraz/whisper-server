@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"jsfraz/whisper-server/utils"
 	"net/http"
 	"sync"
 	"time"
@@ -78,7 +79,7 @@ func RateLimit(burst int, refillPerMinute int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !limiter.allow(c.ClientIP()) {
 			c.Header("Retry-After", "60")
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": utils.ErrorTooManyRequests})
 			c.Abort()
 			return
 		}

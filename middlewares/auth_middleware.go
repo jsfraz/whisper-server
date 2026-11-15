@@ -19,20 +19,20 @@ func AuthMiddleware(c *gin.Context) {
 	userId, _, err := utils.TokenValid(utils.ExtractTokenFromContext(c), utils.GetSingleton().Config.AccessTokenSecret, utils.TokenTypeAccess)
 	// Invalid token
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorInvalidToken})
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
 	// Check if user exists
 	exists, err := database.UserExistsById(userId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 	// Current user does not exist
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "current user does not exist"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorCurrentUserDoesNotExist})
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
@@ -40,12 +40,12 @@ func AuthMiddleware(c *gin.Context) {
 	// next WebSocket connect.
 	deletePending, err := database.WillUserBeDeleted(userId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 	if deletePending {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "current user does not exist"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorCurrentUserDoesNotExist})
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}

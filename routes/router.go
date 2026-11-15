@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/loopfz/gadgeto/tonic"
 
 	"github.com/wI2L/fizz"
 	"github.com/wI2L/fizz/openapi"
@@ -66,6 +67,9 @@ func NewRouter() (*fizz.Fizz, error) {
 	config.AllowAllOrigins = true
 	config.AllowHeaders = append(config.AllowHeaders, "Authorization")
 	engine.Use(cors.New(config))
+
+	// Error bodies carry a translatable code, never a server sentence.
+	tonic.SetErrorHook(utils.TonicErrorHook)
 
 	// Fizz instance
 	fizz := fizz.NewFromEngine(engine)

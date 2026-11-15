@@ -28,12 +28,12 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to create invites"))
+		return c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorNotAuthorized))
 	}
 	// An invite is sent to this address, so a typo is a bounced mail from our
 	// own domain.
 	if !govalidator.IsEmail(request.Mail) {
-		return c.AbortWithError(http.StatusBadRequest, errors.New("invalid e-mail address"))
+		return c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorInvalidEmailAddress))
 	}
 	// Cap the number of live invites: an abused admin token must not turn the
 	// server into an open relay for mail.
@@ -42,7 +42,7 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if len(*active) >= maxActiveInvites {
-		return c.AbortWithError(http.StatusTooManyRequests, errors.New("too many active invites"))
+		return c.AbortWithError(http.StatusTooManyRequests, errors.New(utils.ErrorTooManyActiveInvites))
 	}
 	// Create invite
 	ttl := utils.GetSingleton().Config.InviteTtl
@@ -70,7 +70,7 @@ func GetAllInvites(c *gin.Context) (*[]models.Invite, error) {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get invites"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorNotAuthorized))
 	}
 	// Get invites
 	invites, err := database.GetAllInvites()

@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"jsfraz/whisper-server/database"
+	"jsfraz/whisper-server/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,13 +16,13 @@ func UserDeletionMiddleware(c *gin.Context) {
 	// Check if user is in delete list
 	toDelete, err := database.WillUserBeDeleted(userId.(string))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
 	// User should be deleted
 	if toDelete {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "your account will be deleted"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorAccountWillBeDeleted})
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}

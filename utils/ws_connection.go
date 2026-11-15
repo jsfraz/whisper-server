@@ -136,10 +136,16 @@ func (c *WSConnection) SendSync(message models.WsResponse) error {
 	}
 }
 
-// Send error as WsResponse
+// Send error as WsResponse. Only a client-facing code reaches the client; a
+// server side failure is logged and replaced by the generic code.
 //
 //	@param err
 func (c *WSConnection) SendError(err error) {
+	if !IsErrorCode(err.Error()) {
+		slog.Warn("ws error is not a client code", "user_id", SanitizeLogValue(c.UserId), "error", SanitizeLogValue(err.Error()))
+		c.Send(models.NewWsResponse(models.WsResponseTypeError, ErrorInternal))
+		return
+	}
 	c.Send(models.NewWsResponse(models.WsResponseTypeError, err.Error()))
 }
 

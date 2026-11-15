@@ -34,10 +34,10 @@ func UploadMedia(c *gin.Context) {
 	if err := c.ShouldBind(&request); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "media file too large"})
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": utils.ErrorMediaFileTooLarge})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorInvalidRequest})
 		return
 	}
 
@@ -55,12 +55,12 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	// Enforce maximum upload size
 	maxUpload := utils.GetSingleton().Config.MediaMaxUploadSize
 	if request.File.Size > maxUpload {
-		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New("media file too large"))
+		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New(utils.ErrorMediaFileTooLarge))
 	}
 
 	// Can not send media to self (in production)
 	if senderIdUint == request.ReceiverId && utils.GetSingleton().Config.GinMode == "release" {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New("can not send media to self"))
+		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToSelf))
 	}
 
 	// Check if receiver is being deleted
@@ -69,7 +69,7 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if toDelete {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New("can not send media to this user"))
+		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToUser))
 	}
 
 	// Check if receiver exists
@@ -78,7 +78,7 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !exists {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New("user does not exist"))
+		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorUserNotFound))
 	}
 
 	// Per account quota: one user must not fill the disk for everyone.
@@ -88,7 +88,7 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 			return nil, c.AbortWithError(http.StatusInternalServerError, err)
 		}
 		if count >= int64(maxPerUser) {
-			return nil, c.AbortWithError(http.StatusTooManyRequests, errors.New("too many pending media files"))
+			return nil, c.AbortWithError(http.StatusTooManyRequests, errors.New(utils.ErrorTooManyPendingMediaFiles))
 		}
 	}
 
@@ -121,7 +121,7 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	if written > maxUpload {
 		dst.Close()
 		os.Remove(tmpPath)
-		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New("media file too large"))
+		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New(utils.ErrorMediaFileTooLarge))
 	}
 	if err := dst.Close(); err != nil {
 		os.Remove(tmpPath)
@@ -167,31 +167,32 @@ func DownloadMedia(c *gin.Context) {
 	// Load metadata
 	found, meta, err := database.GetMediaMetadata(id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to load media metadata", "media_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		return
 	}
 	if !found {
-		c.JSON(http.StatusNotFound, gin.H{"error": "media not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": utils.ErrorMediaNotFound})
 		return
 	}
 
 	// Only the intended receiver may download
 	if meta.ReceiverId != userId.(string) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to download this media"})
+		c.JSON(http.StatusForbidden, gin.H{"error": utils.ErrorNotAuthorized})
 		return
 	}
 
 	// Open file
 	path, err := database.MediaFilePath(id)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid media id"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorInvalidMediaId})
 		return
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		// File missing but metadata present: clean up the orphaned key
 		database.DeleteMedia(id)
-		c.JSON(http.StatusNotFound, gin.H{"error": "media not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": utils.ErrorMediaNotFound})
 		return
 	}
 
@@ -200,7 +201,8 @@ func DownloadMedia(c *gin.Context) {
 	info, err := file.Stat()
 	if err != nil {
 		_ = file.Close()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Error("failed to stat media file", "media_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		return
 	}
 	// Stream ciphertext to the client (deletion happens on explicit client confirmation)
@@ -237,7 +239,7 @@ func ConfirmMediaDownload(c *gin.Context, request *models.MediaIdUri) error {
 
 	// Only the intended receiver may delete
 	if meta.ReceiverId != userId.(string) {
-		return c.AbortWithError(http.StatusForbidden, errors.New("not authorized to delete this media"))
+		return c.AbortWithError(http.StatusForbidden, errors.New(utils.ErrorNotAuthorized))
 	}
 
 	// Delete file and metadata
