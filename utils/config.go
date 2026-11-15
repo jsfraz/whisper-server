@@ -65,6 +65,11 @@ type Config struct {
 
 	// Directory where encrypted media files are stored
 	MediaDir string `envconfig:"MEDIA_DIR" default:"data/media"` // Default data/media
+
+	// Per client IP rate limit for the expensive endpoints (register, login,
+	// refresh, upload). Burst is the bucket size, refill the rate afterwards.
+	RateLimitBurst     int `envconfig:"RATE_LIMIT_BURST" default:"20"`
+	RateLimitPerMinute int `envconfig:"RATE_LIMIT_PER_MINUTE" default:"60"`
 }
 
 // Loads config from environmental values.

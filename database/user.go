@@ -6,6 +6,8 @@ import (
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -21,7 +23,9 @@ func UserExistsByUsername(username string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	// A duplicate row must still count as taken; == 1 would report a taken name
+	// as free.
+	return count > 0, nil
 }
 
 // Insert user to database and delete invite code.
@@ -55,7 +59,7 @@ func AdminExists() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	return count > 0, nil
 }
 
 // Check if user exists by ID.
@@ -69,7 +73,7 @@ func UserExistsById(userId string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	return count > 0, nil
 }
 
 // Returns user by ID.
@@ -201,6 +205,7 @@ func PushUsersToDelete(ids []string) error {
 	if err := client.Do(context.Background(), client.B().Sadd().Key("del:users").Member(ids...).Build()).Error(); err != nil {
 		return err
 	}
+	invalidateToDeleteCache()
 	// Delete messages for these users
 	for _, userId := range ids {
 		// Use SCAN to find keys matching pattern
@@ -233,9 +238,20 @@ func PushUsersToDelete(ids []string) error {
 
 // Get all users to delete from SET.
 //
-//	@return []uint64
+// The answer is cached for a couple of seconds because it is read on every user
+// lookup, and a stale entry only delays a deletion confirmation.
+//
+//	@return []string
 //	@return error
 func GetAllUsersToDelete() ([]string, error) {
+	toDeleteMu.Lock()
+	if time.Now().Before(toDeleteUntil) {
+		cached := toDeleteCache
+		toDeleteMu.Unlock()
+		return cached, nil
+	}
+	toDeleteMu.Unlock()
+
 	client := utils.GetSingleton().Valkey
 	members, err := client.Do(context.Background(), client.B().Smembers().Key("del:users").Build()).AsStrSlice()
 	if err != nil {
@@ -248,7 +264,30 @@ func GetAllUsersToDelete() ([]string, error) {
 		}
 		result = append(result, m)
 	}
+
+	toDeleteMu.Lock()
+	toDeleteCache = result
+	toDeleteUntil = time.Now().Add(toDeleteCacheTtl)
+	toDeleteMu.Unlock()
 	return result, nil
+}
+
+// toDeleteCacheTtl bounds how long a pending deletion may go unnoticed by the
+// read-only helpers.
+const toDeleteCacheTtl = 2 * time.Second
+
+var (
+	toDeleteMu    sync.Mutex
+	toDeleteCache []string
+	toDeleteUntil time.Time
+)
+
+// invalidateToDeleteCache makes the next read go to Valkey.
+func invalidateToDeleteCache() {
+	toDeleteMu.Lock()
+	toDeleteCache = nil
+	toDeleteUntil = time.Time{}
+	toDeleteMu.Unlock()
 }
 
 // Check if user is in to delete SET (O(1) lookup).
@@ -271,5 +310,7 @@ func WillUserBeDeleted(userId string) (bool, error) {
 //	@return error
 func RemoveDeletedUserId(userId string) error {
 	client := utils.GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Srem().Key("del:users").Member(userId).Build()).Error()
+	err := client.Do(context.Background(), client.B().Srem().Key("del:users").Member(userId).Build()).Error()
+	invalidateToDeleteCache()
+	return err
 }

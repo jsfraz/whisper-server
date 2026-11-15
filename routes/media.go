@@ -31,6 +31,8 @@ func MediaRoute(g *fizz.RouterGroup) {
 				http.StatusInternalServerError,
 			},
 			true),
+		// Each request may write 25 MiB to disk.
+		middlewares.RateLimit(utils.GetSingleton().Config.RateLimitBurst, utils.GetSingleton().Config.RateLimitPerMinute),
 		handlers.UploadMedia,
 	)
 

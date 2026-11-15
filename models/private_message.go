@@ -2,8 +2,17 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
+
+// OfflineQueueKey is the Valkey key of a queued message. It is derived from the
+// participants and the client timestamp instead of a random id, so a client that
+// resends an unacknowledged message overwrites its own entry instead of creating
+// a second copy.
+func OfflineQueueKey(receiverId string, senderId string, sentAt time.Time) string {
+	return fmt.Sprintf("msg:%s_%s_%d", receiverId, senderId, sentAt.UTC().UnixNano())
+}
 
 type PrivateMessage struct {
 	SenderId        string          `json:"senderId" validate:"required"`

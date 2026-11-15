@@ -6,4 +6,5 @@ const (
 	WsResponseTypeError         WsResponseType = "error"
 	WsResponseTypeMessages      WsResponseType = "messages"
 	WsResponseTypeDeleteAccount WsResponseType = "deleteAccount"
+	WsResponseTypeAck           WsResponseType = "ack"
 )

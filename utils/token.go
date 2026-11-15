@@ -103,6 +103,29 @@ func GetUserIdFromToken(tokenStr string) (string, error) {
 	return userIdFromClaims(token)
 }
 
+// Returns a string claim from an unverified token. Callers must verify the
+// signature first; the value is only trusted once they have.
+//
+//	@param tokenStr
+//	@param claim
+//	@return string
+//	@return error
+func GetStringClaimFromToken(tokenStr string, claim string) (string, error) {
+	token, _, err := jwt.NewParser().ParseUnverified(tokenStr, jwt.MapClaims{})
+	if err != nil {
+		return "", err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid token claims")
+	}
+	value, ok := claims[claim].(string)
+	if !ok || value == "" {
+		return "", fmt.Errorf("missing %s claim", claim)
+	}
+	return value, nil
+}
+
 // Validates RSA JWT token.
 //
 // @param tokenStr

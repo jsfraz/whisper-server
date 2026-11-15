@@ -104,17 +104,22 @@ func SubscribeNewInvites() {
 	<-wait
 }
 
-// Return invite by code from Valkey.
+// ConsumeInviteDataByCode atomically reads and deletes an invite. Using GETDEL
+// makes a code single-use even when two registrations race, so one invitation
+// can never create two accounts (or two admins).
 //
 //	@param code
 //	@return bool
 //	@return []byte
 //	@return error
-func GetInviteDataByCode(code string) (bool, []byte, error) {
+func ConsumeInviteDataByCode(code string) (bool, []byte, error) {
 	client := utils.GetSingleton().Valkey
-	result, err := client.Do(context.Background(), client.B().Get().Key("invite:"+code).Build()).AsBytes()
-	// Return error except if is Valkey error
-	if err != nil && !errors.As(err, &valkeyErr) {
+	result, err := client.Do(context.Background(), client.B().Getdel().Key("invite:"+code).Build()).AsBytes()
+	// Return error except if is Valkey error (key not found)
+	if err != nil {
+		if errors.As(err, &valkeyErr) {
+			return false, []byte{}, nil
+		}
 		return false, []byte{}, err
 	}
 	// Return result
@@ -122,6 +127,22 @@ func GetInviteDataByCode(code string) (bool, []byte, error) {
 		return true, result, nil
 	}
 	return false, []byte{}, nil
+}
+
+// RestoreInviteData puts a consumed invite back, e.g. when registration failed
+// after the code was claimed. The TTL is recomputed from the invite validity.
+//
+//	@param code
+//	@param data
+//	@param validUntil
+//	@return error
+func RestoreInviteData(code string, data []byte, validUntil time.Time) error {
+	ttl := int64(time.Until(validUntil).Seconds())
+	if ttl < 1 {
+		return nil
+	}
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Set().Key("invite:"+code).Value(string(data)).ExSeconds(ttl).Build()).Error()
 }
 
 // Delete invite by code.

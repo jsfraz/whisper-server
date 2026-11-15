@@ -34,6 +34,12 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 - **Media endpoints** (`POST /api/media`, `GET /api/media/{id}`) are raw Gin handlers (multipart, streamed response). Fizz cannot describe them, so their OpenAPI operations are hand-written in `routes/media_openapi.go` (see the `shortcut:` comment). When you change a media handler, update that file too, otherwise client and server drift apart.
 - **Binary responses**: the client generator maps them to `MultipartFile`, so the download is handled by the hand-written `lib/media_download.dart`, not by the generated `downloadMedia`.
 - **The server only ever holds ciphertext.** Never log message content, media or keys.
+- **Login flow:** `POST /api/auth` only accepts a JWT whose `nonce` claim is a
+  live `GET /api/auth/challenge` value (spent on use). Adding or removing a claim
+  there breaks every client; the E2E test "the login token is single use" locks it.
+- **Offline queue contract:** a `msg:*` entry is deleted by the receiver's `ack`,
+  never at send time. Changing that silently loses messages; the E2E test
+  "an unacknowledged message is delivered again on reconnect" locks it.
 
 ## Definition of done
 

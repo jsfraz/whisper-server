@@ -8,10 +8,20 @@ import (
 	"jsfraz/whisper-server/utils"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
+)
+
+const (
+	// wsReadTimeout is how long a connection may stay silent before it is
+	// considered dead. The client answers the server ping, which extends it.
+	wsReadTimeout = 60 * time.Second
+	// wsReadLimit bounds one inbound frame; the largest payload is an encrypted
+	// 25 MiB attachment envelope, which stays far below this.
+	wsReadLimit = 64 << 10
 )
 
 // Handles incoming WebSocket connections and their lifecycle
@@ -29,27 +39,23 @@ func WebSocketHandler(c *gin.Context) {
 	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
 		return
 	}
 	// Check if token exists in Valkey
 	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
 		return
 	}
 	if !exists {
 		err = errors.New("access token not found")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
 		return
 	}
 	// Check if provided token and token from Valkey are the same
 	if accessToken != accessTokenById {
 		err = errors.New("access token mismatch")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
 		return
 	}
 
@@ -64,11 +70,21 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 
-	// Create new WebSocket connection with topic subscription support
-	conn := &utils.WSConnection{
-		Conn:   ws,
-		UserId: userId,
+	// Bound the memory one client can make the server allocate, and drop
+	// connections that stop answering.
+	ws.SetReadLimit(wsReadLimit)
+	if err = ws.SetReadDeadline(time.Now().Add(wsReadTimeout)); err != nil {
+		_ = ws.Close()
+		return
 	}
+	ws.SetPongHandler(func(string) error {
+		return ws.SetReadDeadline(time.Now().Add(wsReadTimeout))
+	})
+
+	// Create new WebSocket connection, writing runs in its own goroutine so a
+	// stalled client can never block the hub.
+	conn := utils.NewWSConnection(ws, userId)
+	go conn.WriteLoop()
 	// Register new connection with the hub
 	utils.GetSingleton().Hub.Register <- conn
 
@@ -77,7 +93,6 @@ func WebSocketHandler(c *gin.Context) {
 		// Ensure cleanup on connection close
 		defer func() {
 			utils.GetSingleton().Hub.Unregister <- conn
-			conn.Conn.Close()
 		}()
 
 		// Check if account should be deleted
@@ -90,7 +105,8 @@ func WebSocketHandler(c *gin.Context) {
 			return
 		}
 
-		// Send messages from cache
+		// Send messages from cache. They stay queued until the client
+		// acknowledges them, so a crash before storing loses nothing.
 		sendMessagesFromCache(conn)
 
 		// Register custom validators
@@ -101,11 +117,6 @@ func WebSocketHandler(c *gin.Context) {
 			// Read and parse incoming message
 			messageType, payload, err := conn.Conn.ReadMessage()
 			if err != nil {
-				/*
-					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-						log.Println(err)
-					}
-				*/
 				return // Terminates goroutine on read error
 			}
 
@@ -143,7 +154,8 @@ func WebSocketHandler(c *gin.Context) {
 	}()
 }
 
-// Send messages from cache.
+// Send messages from cache. The entries are removed by the client's
+// acknowledgement, not here: a failed write must not lose them.
 func sendMessagesFromCache(conn *utils.WSConnection) {
 	// Get messages from cache
 	messages, err := database.GetUserPrivateMessages(conn.UserId)
@@ -151,10 +163,14 @@ func sendMessagesFromCache(conn *utils.WSConnection) {
 		conn.SendError(err)
 		return
 	}
-	// Send messages
+	// Send messages. The queue is bounded by wsSendBuffer, so a large backlog is
+	// written with a wait per frame: dropping frames here would lose messages
+	// that the client has not acknowledged yet.
 	if len(*messages) > 0 {
 		response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
-		conn.Send(response)
+		if err := conn.SendSync(response); err != nil {
+			slog.Warn("failed to send queued messages", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
 	}
 }
 

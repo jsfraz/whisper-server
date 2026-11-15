@@ -35,13 +35,15 @@ func GetAllUserPrivateMessageKeys(userId string) ([]string, error) {
 	return keys, nil
 }
 
-// Retrieves and deletes all private messages for given user.
+// Retrieves all private messages for given user. The entries stay queued: the
+// client removes them with an acknowledgement once they are stored locally, so
+// a connection that dies mid-delivery loses nothing.
 //
 //	@param userId
 //	@return *[]models.PrivateMessage
 //	@return error
 func GetUserPrivateMessages(userId string) (*[]models.PrivateMessage, error) {
-	var messages []models.PrivateMessage = []models.PrivateMessage{}
+	var messages = []models.PrivateMessage{}
 	keys, err := GetAllUserPrivateMessageKeys(userId)
 	if err != nil {
 		return nil, err
@@ -63,13 +65,6 @@ func GetUserPrivateMessages(userId string) (*[]models.PrivateMessage, error) {
 			return nil, err
 		}
 		messages = append(messages, *message)
-	}
-	// Delete all retrieved keys
-	if len(keys) > 0 {
-		err = DeletePrivateMessages(keys)
-		if err != nil {
-			return nil, err
-		}
 	}
 	// Sort by sentAt
 	sort.Slice(messages, func(i, j int) bool {

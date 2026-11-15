@@ -36,6 +36,19 @@ func AuthMiddleware(c *gin.Context) {
 		c.AbortWithError(http.StatusUnauthorized, err)
 		return
 	}
+	// A user an admin deleted must lose API access immediately, not only on the
+	// next WebSocket connect.
+	deletePending, err := database.WillUserBeDeleted(userId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+	if deletePending {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "current user does not exist"})
+		c.AbortWithError(http.StatusUnauthorized, err)
+		return
+	}
 	// Token is valid, set it to context and continue
 	c.Set("userId", userId)
 	c.Next()

@@ -9,11 +9,20 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"time"
 
 	messaging "firebase.google.com/go/v4/messaging"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
+	"github.com/valkey-io/valkey-go"
 )
+
+// dedupTtl is how long a delivered message is remembered so a client resend
+// (no delivery ack received) does not produce a duplicate.
+const dedupTtl = 3600
+
+// pushQueueSize bounds pending push notifications; a burst of messages to
+// offline users must not spawn unbounded goroutines.
+const pushQueueSize = 256
 
 // Hub manages WebSocket connections and message broadcasting
 type Hub struct {
@@ -29,9 +38,19 @@ type Hub struct {
 	Register chan *WSConnection
 	// Channel for unregistering (removing) WebSocket connections
 	Unregister chan *WSConnection
+	// Pending push notifications, handled off the message path
+	push chan string
 	// Mutex for thread-safe access to the Connections map
 	mu sync.RWMutex
 }
+
+// wsValidator validates WebSocket payloads. A validator is safe for concurrent
+// use, so one instance is shared instead of rebuilt per message.
+var wsValidator = func() *validator.Validate {
+	v := validator.New()
+	_ = v.RegisterValidation("type", models.ValidateWsMessageType)
+	return v
+}()
 
 // NewHub creates and initializes a new Hub instance
 //
@@ -42,14 +61,20 @@ func NewHub() *Hub {
 		Broadcast: make(chan struct {
 			SenderId string
 			Message  models.WsMessage
-		}),
-		Register:   make(chan *WSConnection),
-		Unregister: make(chan *WSConnection),
+		}, 64),
+		Register:   make(chan *WSConnection, 16),
+		Unregister: make(chan *WSConnection, 16),
+		push:       make(chan string, pushQueueSize),
 	}
 }
 
-// Run starts the Hub's main event loop to handle connections and messages
+// Run starts the Hub's main event loop to handle connections and messages.
+//
+// Nothing in here may hold the connection map lock across network I/O: a single
+// slow client or a slow push call would otherwise stop message delivery for
+// every user.
 func (h *Hub) Run() {
+	go h.pushLoop()
 	for {
 		select {
 		// Handle new connection registration
@@ -63,89 +88,131 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			delete(h.Connections, conn)
 			h.mu.Unlock()
+			conn.Close()
 
 		// Handle incoming message
 		case msgSenderPair := <-h.Broadcast:
-			h.mu.RLock()
-
-			switch msgSenderPair.Message.Type {
-
-			// Private message
-			case models.WsMessageTopicMessage:
-				// Unmarshall private message
-				var privateMessage models.NewPrivateMessageReceive
-				err := json.Unmarshal(msgSenderPair.Message.Payload, &privateMessage)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Validate private message
-				validator := validator.New()
-				err = validator.Struct(privateMessage)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Check whether user is sending message to self (in production)
-				if msgSenderPair.SenderId == privateMessage.ReceiverId && GetSingleton().Config.GinMode == "release" {
-					err = errors.New("can not send message to self")
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Check if message is being sent to user that will be deleted
-				toDelete, err := h.willUserBeDeleted(privateMessage.ReceiverId)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				if toDelete {
-					err = errors.New("can not send message to this user")
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Check if user exists
-				exists, err := h.userExistsById(privateMessage.ReceiverId)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				if !exists {
-					h.sendError(msgSenderPair.SenderId, errors.New("user does not exist"))
-					h.mu.RUnlock()
-					continue
-				}
-				// Send message to connected client with receiverId
-				online := false
-				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Content, privateMessage.Key, privateMessage.Nonce, privateMessage.Mac, privateMessage.SentAt, false)
-				for conn := range h.Connections {
-					if conn.UserId == privateMessage.ReceiverId {
-						online = true
-						pm.RecipientOnline = true
-						conn.Send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
-						break
-					}
-				}
-				if !online {
-					// Push message to Valkey
-					h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
-
-					// Send push notification
-					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
-						slog.Warn("failed to send push notification",
-							"user_id", SanitizeLogValue(privateMessage.ReceiverId),
-							"error", SanitizeLogValue(err.Error()))
-					}
-				}
-			}
-
-			h.mu.RUnlock()
+			h.handle(msgSenderPair.SenderId, msgSenderPair.Message)
 		}
+	}
+}
+
+// handle dispatches one incoming client message.
+func (h *Hub) handle(senderId string, message models.WsMessage) {
+	switch message.Type {
+	case models.WsMessageTopicMessage:
+		h.handlePrivateMessage(senderId, message.Payload)
+	case models.WsMessageTopicAck:
+		h.handleAck(senderId, message.Payload)
+	default:
+		h.sendError(senderId, errors.New("unsupported message type"))
+	}
+}
+
+// connectionOf returns the live connection of a user, if any.
+func (h *Hub) connectionOf(userId string) *WSConnection {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for conn := range h.Connections {
+		if conn.UserId == userId {
+			return conn
+		}
+	}
+	return nil
+}
+
+// handlePrivateMessage validates and delivers one private message.
+func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
+	var privateMessage models.NewPrivateMessageReceive
+	if err := json.Unmarshal(payload, &privateMessage); err != nil {
+		h.sendError(senderId, err)
+		return
+	}
+	// Validate private message
+	if err := wsValidator.Struct(privateMessage); err != nil {
+		h.sendError(senderId, err)
+		return
+	}
+	// Check whether user is sending message to self (in production)
+	if senderId == privateMessage.ReceiverId && GetSingleton().Config.GinMode == "release" {
+		h.sendError(senderId, errors.New("can not send message to self"))
+		return
+	}
+	// Check if message is being sent to user that will be deleted
+	toDelete, err := h.willUserBeDeleted(privateMessage.ReceiverId)
+	if err != nil {
+		h.sendError(senderId, err)
+		return
+	}
+	if toDelete {
+		h.sendError(senderId, errors.New("can not send message to this user"))
+		return
+	}
+	// Check if user exists
+	exists, err := h.userExistsById(privateMessage.ReceiverId)
+	if err != nil {
+		h.sendError(senderId, err)
+		return
+	}
+	if !exists {
+		h.sendError(senderId, errors.New("user does not exist"))
+		return
+	}
+	// A resend after a lost delivery ack must not deliver a second copy.
+	alreadyDelivered, err := h.alreadyDelivered(senderId, privateMessage.ReceiverId, privateMessage.SentAt)
+	if err != nil {
+		h.sendError(senderId, err)
+		return
+	}
+	if alreadyDelivered {
+		h.sendDeliveryAck(senderId, privateMessage.ReceiverId, privateMessage.SentAt)
+		return
+	}
+
+	pm := models.NewPrivateMessage(senderId, privateMessage.Content, privateMessage.Key, privateMessage.Nonce, privateMessage.Mac, privateMessage.SentAt, false)
+	// Send message to the receiver's connection, or queue it for later
+	if conn := h.connectionOf(privateMessage.ReceiverId); conn != nil {
+		pm.RecipientOnline = true
+		conn.Send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
+	} else {
+		if err := h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl); err != nil {
+			// No ack: the client keeps the message pending and resends it.
+			h.sendError(senderId, err)
+			return
+		}
+		select {
+		case h.push <- privateMessage.ReceiverId:
+		default:
+			slog.Warn("push queue full, notification dropped", "user_id", SanitizeLogValue(privateMessage.ReceiverId))
+		}
+	}
+	// Recorded only after the delivery succeeded: a failed queue write must not
+	// make the client's resend look like a duplicate.
+	if err := h.markDelivered(senderId, privateMessage.ReceiverId, privateMessage.SentAt); err != nil {
+		slog.Warn("failed to record delivered message", "error", SanitizeLogValue(err.Error()))
+	}
+	// Only now the sender may show the message as sent
+	h.sendDeliveryAck(senderId, privateMessage.ReceiverId, privateMessage.SentAt)
+}
+
+// handleAck removes the acknowledged messages from the receiver's offline queue.
+func (h *Hub) handleAck(receiverId string, payload json.RawMessage) {
+	var ack models.WsMessageAck
+	if err := json.Unmarshal(payload, &ack); err != nil {
+		h.sendError(receiverId, err)
+		return
+	}
+	if err := wsValidator.Struct(ack); err != nil {
+		h.sendError(receiverId, err)
+		return
+	}
+	keys := make([]string, 0, len(ack.Messages))
+	for _, message := range ack.Messages {
+		keys = append(keys, models.OfflineQueueKey(receiverId, message.SenderId, message.SentAt))
+	}
+	client := GetSingleton().Valkey
+	if err := client.Do(context.Background(), client.B().Del().Key(keys...).Build()).Error(); err != nil {
+		slog.Error("failed to ack queued messages", "error", SanitizeLogValue(err.Error()))
 	}
 }
 
@@ -154,10 +221,48 @@ func (h *Hub) Run() {
 //	@param senderId
 //	@param err
 func (h *Hub) sendError(senderId string, err error) {
-	for conn := range h.Connections {
-		if conn.UserId == senderId {
-			conn.SendError(err)
-			break
+	if conn := h.connectionOf(senderId); conn != nil {
+		conn.SendError(err)
+	}
+}
+
+// sendDeliveryAck tells the sender the message is safely on the server side.
+func (h *Hub) sendDeliveryAck(senderId string, receiverId string, sentAt time.Time) {
+	if conn := h.connectionOf(senderId); conn != nil {
+		conn.Send(models.NewWsResponse(models.WsResponseTypeAck, models.DeliveryAck{
+			ReceiverId: receiverId,
+			SentAt:     sentAt,
+		}))
+	}
+}
+
+// dedupKey identifies one message of one conversation. Client timestamps are
+// stable across a resend, so they work as the delivery id.
+func dedupKey(receiverId string, senderId string, sentAt time.Time) string {
+	return fmt.Sprintf("dedup:%s:%s:%d", receiverId, senderId, sentAt.UTC().UnixNano())
+}
+
+// alreadyDelivered reports whether a message with the same participants and
+// timestamp was delivered before (a resend after a lost ack).
+func (h *Hub) alreadyDelivered(senderId string, receiverId string, sentAt time.Time) (bool, error) {
+	client := GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Sismember().Key(dedupKey(receiverId, senderId, sentAt)).Member("1").Build()).AsBool()
+}
+
+// markDelivered records a delivered message so a resend is answered instead of
+// delivered twice.
+func (h *Hub) markDelivered(senderId string, receiverId string, sentAt time.Time) error {
+	client := GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Set().Key(dedupKey(receiverId, senderId, sentAt)).Value("1").ExSeconds(dedupTtl).Build()).Error()
+}
+
+// pushLoop sends push notifications outside the message path.
+func (h *Hub) pushLoop() {
+	for userId := range h.push {
+		if err := h.SendPushNotification(userId, "New message", "You have a new message"); err != nil {
+			slog.Warn("failed to send push notification",
+				"user_id", SanitizeLogValue(userId),
+				"error", SanitizeLogValue(err.Error()))
 		}
 	}
 }
@@ -173,7 +278,7 @@ func (h *Hub) userExistsById(userId string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	return count > 0, nil
 }
 
 // Push PrivateMessage to Valkey.
@@ -190,7 +295,8 @@ func (h *Hub) pushMessage(receiverId string, message models.PrivateMessage, ttl 
 	}
 	// Push
 	client := GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("msg:%s_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
+	key := models.OfflineQueueKey(receiverId, message.SenderId, message.SentAt)
+	return client.Do(context.Background(), client.B().Set().Key(key).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
 }
 
 // Check if user with given ID will be deleted (O(1) with SET).
@@ -213,7 +319,7 @@ func (h *Hub) willUserBeDeleted(userId string) (bool, error) {
 func (h *Hub) DeleteUsers(ids []string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	var online []string = []string{}
+	var online = []string{}
 	for conn := range h.Connections {
 		// Find online user
 		if slices.Contains(ids, conn.UserId) {
@@ -242,7 +348,15 @@ func (h *Hub) SendPushNotification(userId string, title, body string) error {
 	// Get Firebase Installation ID by userId
 	fid, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%s", userId)).Build()).AsBytes()
 	if err != nil {
+		// No push target (e.g. desktop clients never register one) is not an error
+		var valkeyErr *valkey.ValkeyError
+		if errors.As(err, &valkeyErr) {
+			return nil
+		}
 		return fmt.Errorf("failed to get push target for user %s: %w", userId, err)
+	}
+	if len(fid) == 0 {
+		return nil
 	}
 	// Message.Token accepts only FCM tokens, FIDs must go through multicast
 	resp, err := GetSingleton().FirebaseMsg.SendEachForMulticast(context.Background(), &messaging.MulticastMessage{
@@ -255,7 +369,7 @@ func (h *Hub) SendPushNotification(userId string, title, body string) error {
 	if err != nil {
 		return fmt.Errorf("failed to send push notification to user %s: %w", userId, err)
 	}
-	if resp.FailureCount > 0 {
+	if resp.FailureCount > 0 && len(resp.Responses) > 0 {
 		return fmt.Errorf("failed to send push notification to user %s: %v", userId, resp.Responses[0].Error)
 	}
 	return nil

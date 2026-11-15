@@ -38,7 +38,7 @@ C4Container
 
   Container(api, "API", "Go 1.27 / Gin / Fizz", "Auth, users, invites, media, WebSocket hub")
   ContainerDb(db, "SQLite", "SQLCipher", "users table (goose migrations)")
-  Container(valkey, "Valkey", "Valkey", "invite:*, msg:*, media:*, ws:*, fcm:*, del:users")
+  Container(valkey, "Valkey", "Valkey", "invite:*, msg:*, dedup:*, media:*, media:user:*, ws:*, fcm:*, refresh:*, del:users")
   System_Ext(fcm, "Firebase Cloud Messaging", "")
 
   Rel(user, app, "Uses")
@@ -53,6 +53,11 @@ C4Container
 
 The server never sees plaintext messages or media. It stores ciphertext in
 transport, metadata in Valkey with a TTL, and the encrypted media blob on disk.
+
+Offline messages live in `msg:<receiver>_<sender>_<sentAtNanos>` and are removed
+by the receiver's `ack` (not when they are sent), so a client that dies between
+reading a message and storing it receives it again on reconnect. `dedup:*` makes
+a client resend idempotent, `refresh:<userId>` holds the live refresh token ids.
 
 ## Dependency rules
 

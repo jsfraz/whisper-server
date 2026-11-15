@@ -105,45 +105,60 @@ func DeleteMedia(id string) error {
 	return client.Do(context.Background(), client.B().Del().Key(mediaKeyPrefix+id).Build()).Error()
 }
 
+// mediaUserKeyPrefix keys the set of media ids a user participates in, so media
+// cleanup is a set read instead of a scan of every media key.
+const mediaUserKeyPrefix = "media:user:"
+
+// IndexUserMedia records a media id under both participants. The set is given a
+// TTL a little longer than the media itself, so stale entries disappear on their
+// own.
+//
+//	@param senderId
+//	@param receiverId
+//	@param id
+//	@param ttl
+//	@return error
+func IndexUserMedia(senderId string, receiverId string, id string, ttl int) error {
+	client := utils.GetSingleton().Valkey
+	setTtl := int64(ttl) + 3600
+	keys := []string{mediaUserKeyPrefix + senderId}
+	if receiverId != senderId {
+		keys = append(keys, mediaUserKeyPrefix+receiverId)
+	}
+	for _, key := range keys {
+		if err := client.Do(context.Background(), client.B().Sadd().Key(key).Member(id).Build()).Error(); err != nil {
+			return err
+		}
+		if err := client.Do(context.Background(), client.B().Expire().Key(key).Seconds(setTtl).Build()).Error(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Delete all media where given user is either sender or receiver.
 //
 //	@param userId
 //	@return error
 func DeleteUserMedia(userId string) error {
 	client := utils.GetSingleton().Valkey
-	// Scan all media keys
-	var cursor uint64 = 0
-	for {
-		result, err := client.Do(context.Background(), client.B().Scan().Cursor(cursor).Match(mediaKeyPrefix+"*").Count(100).Build()).AsScanEntry()
-		if err != nil {
-			return err
+	key := mediaUserKeyPrefix + userId
+	ids, err := client.Do(context.Background(), client.B().Smembers().Key(key).Build()).AsStrSlice()
+	if err != nil {
+		if errors.As(err, &valkeyErr) {
+			return nil
 		}
-		for _, key := range result.Elements {
-			metaBytes, err := client.Do(context.Background(), client.B().Get().Key(key).Build()).AsBytes()
-			if err != nil && !errors.As(err, &valkeyErr) {
-				slog.Error("media cleanup failed", "error", err)
-				continue
-			}
-			if metaBytes == nil {
-				continue
-			}
-			meta, err := models.MediaMetadataFromJson(metaBytes)
-			if err != nil {
-				slog.Error("media cleanup failed", "error", err)
-				continue
-			}
-			if meta.SenderId == userId || meta.ReceiverId == userId {
-				if err := DeleteMedia(meta.Id); err != nil {
-					slog.Error("media cleanup failed", "error", err)
-				}
-			}
+		return err
+	}
+	for _, id := range ids {
+		if !isValidMediaID(id) {
+			continue
 		}
-		cursor = result.Cursor
-		if cursor == 0 {
-			break
+		if err := DeleteMedia(id); err != nil {
+			slog.Error("media cleanup failed", "media_id", id, "error", err)
 		}
 	}
-	return nil
+	return client.Do(context.Background(), client.B().Del().Key(key).Build()).Error()
 }
 
 // Deletes media files whose metadata key no longer exists in Valkey and upload

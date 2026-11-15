@@ -73,6 +73,9 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	// Delete messages from Valkey
 	for _, userId := range request.Ids {
 		database.DeleteUserPrivateMessages(userId)
+		// Revoke the account's sessions as well, otherwise it could refresh its
+		// way back in.
+		_ = database.DeleteRefreshSessions(userId)
 	}
 	// Delete media from server
 	for _, userId := range request.Ids {
@@ -142,6 +145,11 @@ func DeleteMe(c *gin.Context) error {
 	// Delete user
 	err = database.DeleteUserById(userId.(string))
 	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	// Revoke every refresh token of the account
+	if err = database.DeleteRefreshSessions(userId.(string)); err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 

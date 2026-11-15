@@ -53,6 +53,8 @@ sudo docker compose -f docker-compose.dev.yml --env-file .env.dev up -d
 | WS_ACCESS_TOKEN_SECRET | Secret key for short-lived WebSocket access token | Yes | - |
 | WS_ACCESS_TOKEN_LIFESPAN | WebSocket access token lifetime (in seconds) | No | 10 (10 seconds) |
 | MESSAGE_TTL | Message retention time (in seconds) | No | 2592000 (30 days) |
+| RATE_LIMIT_BURST | Per client IP bucket size for register, auth, refresh and upload | No | 20 |
+| RATE_LIMIT_PER_MINUTE | Per client IP refill rate for those endpoints | No | 60 |
 
 ### Firebase
 

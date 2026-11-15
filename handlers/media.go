@@ -6,6 +6,7 @@ import (
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -23,8 +24,19 @@ import (
 //
 //	@param c
 func UploadMedia(c *gin.Context) {
+	// Bound the request body before parsing. Multipart parsing spools whatever
+	// the client sends to a temp file, and the declared part size is attacker
+	// supplied, so the size check below can only run after the bytes are on disk.
+	maxUpload := utils.GetSingleton().Config.MediaMaxUploadSize
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUpload+(1<<20))
+
 	var request models.UploadMediaInput
 	if err := c.ShouldBind(&request); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "media file too large"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -41,7 +53,8 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	senderIdUint := senderId.(string)
 
 	// Enforce maximum upload size
-	if request.File.Size > utils.GetSingleton().Config.MediaMaxUploadSize {
+	maxUpload := utils.GetSingleton().Config.MediaMaxUploadSize
+	if request.File.Size > maxUpload {
 		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New("media file too large"))
 	}
 
@@ -87,11 +100,17 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	written, err := io.Copy(dst, src)
+	// LimitReader is the real cap: the declared size is not trusted.
+	written, err := io.Copy(dst, io.LimitReader(src, maxUpload+1))
 	if err != nil {
 		dst.Close()
 		os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if written > maxUpload {
+		dst.Close()
+		os.Remove(tmpPath)
+		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New("media file too large"))
 	}
 	if err := dst.Close(); err != nil {
 		os.Remove(tmpPath)
@@ -109,6 +128,12 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 		os.Remove(tmpPath)
 		database.DeleteMedia(id)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	// Index the file per participant, so cleanup does not have to scan every
+	// media key in Valkey.
+	if err := database.IndexUserMedia(senderIdUint, request.ReceiverId, id, utils.GetSingleton().Config.MediaTtl); err != nil {
+		slog.Warn("failed to index media for cleanup", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
 	}
 
 	return models.NewMediaUploadResponse(id), nil
