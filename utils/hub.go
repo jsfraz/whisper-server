@@ -308,7 +308,10 @@ func dedupKey(receiverId string, senderId string, sentAt time.Time) string {
 // timestamp was delivered before (a resend after a lost ack).
 func (h *Hub) alreadyDelivered(senderId string, receiverId string, sentAt time.Time) (bool, error) {
 	client := GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Sismember().Key(dedupKey(receiverId, senderId, sentAt)).Member("1").Build()).AsBool()
+	// markDelivered writes a string, so this must not be a set membership test:
+	// a resend would answer WRONGTYPE and the message would be lost.
+	count, err := client.Do(context.Background(), client.B().Exists().Key(dedupKey(receiverId, senderId, sentAt)).Build()).AsInt64()
+	return count > 0, err
 }
 
 // markDelivered records a delivered message so a resend is answered instead of
