@@ -81,6 +81,17 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 		return nil, c.AbortWithError(http.StatusBadRequest, errors.New("user does not exist"))
 	}
 
+	// Per account quota: one user must not fill the disk for everyone.
+	if maxPerUser := utils.GetSingleton().Config.MediaMaxPerUser; maxPerUser > 0 {
+		count, err := database.UserMediaCount(senderIdUint)
+		if err != nil {
+			return nil, c.AbortWithError(http.StatusInternalServerError, err)
+		}
+		if count >= int64(maxPerUser) {
+			return nil, c.AbortWithError(http.StatusTooManyRequests, errors.New("too many pending media files"))
+		}
+	}
+
 	// Generate unguessable id and persist the ciphertext to disk
 	id := uuid.New().String()
 	src, err := request.File.Open()
@@ -184,12 +195,24 @@ func DownloadMedia(c *gin.Context) {
 		return
 	}
 
+	// The header comes from the file itself: metadata can drift, and a wrong
+	// length truncates the download without an error.
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	// Stream ciphertext to the client (deletion happens on explicit client confirmation)
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Disposition", "attachment; filename=\""+id+"\"")
-	c.Header("Content-Length", strconv.FormatInt(meta.Size, 10))
-	_, _ = io.Copy(c.Writer, file)
-	file.Close()
+	c.Header("Content-Length", strconv.FormatInt(info.Size(), 10))
+	if _, err := io.Copy(c.Writer, file); err != nil {
+		slog.Warn("media download aborted", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
+	}
+	if err := file.Close(); err != nil {
+		slog.Warn("failed to close media file", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
+	}
 }
 
 // Confirm an encrypted media file has been downloaded and delete it from the server.

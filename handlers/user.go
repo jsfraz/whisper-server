@@ -6,6 +6,7 @@ import (
 	"jsfraz/whisper-server/database"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -70,22 +71,29 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Delete messages from Valkey
+	// Delete messages and sessions from Valkey, and media from disk. A failure
+	// here leaves ciphertext behind, so it must not pass silently.
 	for _, userId := range request.Ids {
-		database.DeleteUserPrivateMessages(userId)
-		// Revoke the account's sessions as well, otherwise it could refresh its
-		// way back in.
-		_ = database.DeleteRefreshSessions(userId)
-	}
-	// Delete media from server
-	for _, userId := range request.Ids {
-		database.DeleteUserMedia(userId)
+		if err := database.DeleteUserPrivateMessages(userId); err != nil {
+			slog.Error("failed to delete user messages", "user_id", utils.SanitizeLogValue(userId), "error", utils.SanitizeLogValue(err.Error()))
+			return c.AbortWithError(http.StatusInternalServerError, err)
+		}
+		if err := database.DeleteRefreshSessions(userId); err != nil {
+			slog.Error("failed to revoke user sessions", "user_id", utils.SanitizeLogValue(userId), "error", utils.SanitizeLogValue(err.Error()))
+			return c.AbortWithError(http.StatusInternalServerError, err)
+		}
+		if err := database.DeleteUserMedia(userId); err != nil {
+			slog.Error("failed to delete user media", "user_id", utils.SanitizeLogValue(userId), "error", utils.SanitizeLogValue(err.Error()))
+			return c.AbortWithError(http.StatusInternalServerError, err)
+		}
 	}
 	// Send ws message to client
 	onlineIds := utils.GetSingleton().Hub.DeleteUsers(request.Ids)
 	// Delete IDs from Valkey
 	for _, id := range onlineIds {
-		database.RemoveDeletedUserId(id)
+		if err := database.RemoveDeletedUserId(id); err != nil {
+			slog.Error("failed to clear deleted user id", "user_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
+		}
 	}
 	return nil
 }

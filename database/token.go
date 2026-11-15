@@ -30,6 +30,22 @@ func StoreRefreshSession(userId string, tokenId string, ttl int) error {
 	return client.Do(context.Background(), client.B().Expire().Key(refreshSessionPrefix+userId).Seconds(int64(ttl)).Build()).Error()
 }
 
+// ConsumeRefreshSession reports whether the token id is live and removes it, so
+// a refresh token can be used exactly once.
+//
+//	@param userId
+//	@param tokenId
+//	@return bool
+//	@return error
+func ConsumeRefreshSession(userId string, tokenId string) (bool, error) {
+	client := utils.GetSingleton().Valkey
+	removed, err := client.Do(context.Background(), client.B().Srem().Key(refreshSessionPrefix+userId).Member(tokenId).Build()).AsInt64()
+	if err != nil {
+		return false, err
+	}
+	return removed == 1, nil
+}
+
 // SessionExists reports whether a refresh token id is currently live.
 //
 //	@param userId

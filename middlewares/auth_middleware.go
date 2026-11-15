@@ -16,7 +16,7 @@ import (
 //	@param c Gin context
 func AuthMiddleware(c *gin.Context) {
 	// Get access token from context and check it
-	userId, _, err := utils.TokenValid(utils.ExtractTokenFromContext(c), utils.GetSingleton().Config.AccessTokenSecret)
+	userId, _, err := utils.TokenValid(utils.ExtractTokenFromContext(c), utils.GetSingleton().Config.AccessTokenSecret, utils.TokenTypeAccess)
 	// Invalid token
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})

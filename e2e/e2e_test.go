@@ -56,6 +56,88 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("a refresh token is single use and rotates", func(t *testing.T) {
+		user := e.register(t, "rotateuser")
+		tokens := e.authenticate(t, user)
+
+		var first models.RefreshResponse
+		if status := e.doJSON(t, http.MethodPost, "/api/auth/refresh", models.Refresh{RefreshToken: tokens.RefreshToken}, "", &first); status != http.StatusOK {
+			t.Fatalf("first refresh status: %d", status)
+		}
+		if first.RefreshToken == "" || first.RefreshToken == tokens.RefreshToken {
+			t.Fatal("refresh token was not rotated")
+		}
+		// The spent token must not work again.
+		if status := e.doJSON(t, http.MethodPost, "/api/auth/refresh", models.Refresh{RefreshToken: tokens.RefreshToken}, "", nil); status != http.StatusUnauthorized {
+			t.Fatalf("replayed refresh token status: %d, want %d", status, http.StatusUnauthorized)
+		}
+		// The rotated one does.
+		if status := e.doJSON(t, http.MethodPost, "/api/auth/refresh", models.Refresh{RefreshToken: first.RefreshToken}, "", nil); status != http.StatusOK {
+			t.Fatalf("rotated refresh token status: %d", status)
+		}
+	})
+
+	t.Run("a message with an implausible timestamp is refused", func(t *testing.T) {
+		sender := e.register(t, "skewsender")
+		receiver := e.register(t, "skewreceiver")
+		conn := e.dialWS(t, e.wsToken(t, e.authenticate(t, sender).AccessToken))
+		defer func() { _ = conn.Close() }()
+
+		payload := json.RawMessage(fmt.Sprintf(`{"receiverId":%q,"content":"x","key":"k","nonce":"n","mac":"m","sentAt":%q}`,
+			receiver.Id, time.Now().Add(48*time.Hour).UTC().Format(time.RFC3339Nano)))
+		message, err := json.Marshal(models.WsMessage{Type: models.WsMessageTopicMessage, Payload: payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
+			t.Fatal(err)
+		}
+		if reply := e.readError(t, conn); reply == "" {
+			t.Fatal("no error reported for an implausible timestamp")
+		}
+	})
+
+	t.Run("an offline queue has a per user cap", func(t *testing.T) {
+		previous := utils.GetSingleton().Config.MessageMaxQueued
+		utils.GetSingleton().Config.MessageMaxQueued = 2
+		defer func() { utils.GetSingleton().Config.MessageMaxQueued = previous }()
+
+		sender := e.register(t, "capsender")
+		receiver := e.register(t, "capreceiver")
+		conn := e.dialWS(t, e.wsToken(t, e.authenticate(t, sender).AccessToken))
+		defer func() { _ = conn.Close() }()
+
+		for i := 0; i < 2; i++ {
+			e.sendMessage(t, conn, receiver.Id, `"queued"`)
+		}
+		waitFor(t, func() bool {
+			keys, err := database.GetAllUserPrivateMessageKeys(receiver.Id)
+			return err == nil && len(keys) == 2
+		})
+		// The third message finds the queue full.
+		e.sendMessage(t, conn, receiver.Id, `"over"`)
+		if reply := e.readError(t, conn); reply == "" {
+			t.Fatal("no error reported for a full queue")
+		}
+	})
+
+	t.Run("a user has a media quota", func(t *testing.T) {
+		previous := utils.GetSingleton().Config.MediaMaxPerUser
+		utils.GetSingleton().Config.MediaMaxPerUser = 2
+		defer func() { utils.GetSingleton().Config.MediaMaxPerUser = previous }()
+
+		sender := e.register(t, "quotasender")
+		receiver := e.register(t, "quotareceiver")
+		senderTokens := e.authenticate(t, sender)
+
+		for i := 0; i < 2; i++ {
+			e.uploadMedia(t, senderTokens.AccessToken, receiver.Id, []byte("blob"))
+		}
+		if status := e.uploadMediaStatus(t, senderTokens.AccessToken, receiver.Id, []byte("blob")); status != http.StatusTooManyRequests {
+			t.Fatalf("upload above the quota status: %d, want %d", status, http.StatusTooManyRequests)
+		}
+	})
+
 	t.Run("the login token is single use", func(t *testing.T) {
 		user := e.register(t, "singletoken")
 		signed := e.loginToken(t, user, e.authChallenge(t))
@@ -602,6 +684,39 @@ func (e *env) ackMessages(t *testing.T, conn *websocket.Conn, messages []models.
 	}
 	if err := conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
 		t.Fatalf("send ws ack: %v", err)
+	}
+}
+
+// readError returns the payload of the next error frame, skipping delivery
+// acknowledgements of earlier messages.
+func (e *env) readError(t *testing.T, conn *websocket.Conn) string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_ = conn.SetReadDeadline(deadline)
+		var response struct {
+			Type    string `json:"type"`
+			Payload string `json:"payload"`
+		}
+		messageType, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read ws error frame: %v", err)
+		}
+		if messageType != websocket.BinaryMessage {
+			t.Fatalf("unexpected ws message type: %d", messageType)
+		}
+		if err := json.Unmarshal(data, &response); err != nil {
+			// A non-string payload (ack) does not decode into this struct.
+			continue
+		}
+		switch response.Type {
+		case string(models.WsResponseTypeAck):
+			continue
+		case string(models.WsResponseTypeError):
+			return response.Payload
+		default:
+			t.Fatalf("expected an error frame, got %s", response.Type)
+		}
 	}
 }
 

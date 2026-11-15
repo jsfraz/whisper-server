@@ -136,6 +136,24 @@ func IndexUserMedia(senderId string, receiverId string, id string, ttl int) erro
 	return nil
 }
 
+// UserMediaCount returns how many media files a user participates in. Used as a
+// per account quota, so one account cannot fill the disk.
+//
+//	@param userId
+//	@return int64
+//	@return error
+func UserMediaCount(userId string) (int64, error) {
+	client := utils.GetSingleton().Valkey
+	count, err := client.Do(context.Background(), client.B().Scard().Key(mediaUserKeyPrefix+userId).Build()).AsInt64()
+	if err != nil {
+		if errors.As(err, &valkeyErr) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return count, nil
+}
+
 // Delete all media where given user is either sender or receiver.
 //
 //	@param userId
@@ -176,6 +194,7 @@ func SweepOrphanedMedia() (int, error) {
 		return 0, err
 	}
 	removed := 0
+	candidates := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -196,12 +215,29 @@ func SweepOrphanedMedia() (int, error) {
 		if !isValidMediaID(name) {
 			continue
 		}
-		exists, err := mediaMetadataExists(name)
-		if err != nil {
-			return removed, err
+		candidates = append(candidates, name)
+	}
+	// One pipelined EXISTS per batch instead of one round trip per file.
+	const sweepBatch = 200
+	for start := 0; start < len(candidates); start += sweepBatch {
+		end := start + sweepBatch
+		if end > len(candidates) {
+			end = len(candidates)
 		}
-		if !exists {
-			if err = os.Remove(path); err == nil {
+		batch := candidates[start:end]
+		commands := make([]valkey.Completed, 0, len(batch))
+		for _, id := range batch {
+			commands = append(commands, client().B().Exists().Key(mediaKeyPrefix+id).Build())
+		}
+		for i, result := range client().DoMulti(context.Background(), commands...) {
+			exists, err := result.AsInt64()
+			if err != nil {
+				return removed, err
+			}
+			if exists > 0 {
+				continue
+			}
+			if err := os.Remove(filepath.Join(dir, batch[i])); err == nil {
 				removed++
 			}
 		}
@@ -222,14 +258,9 @@ func RunMediaSweeper(interval time.Duration) {
 	}
 }
 
-// Check whether the metadata key for a media id exists in Valkey.
-func mediaMetadataExists(id string) (bool, error) {
-	client := utils.GetSingleton().Valkey
-	exists, err := client.Do(context.Background(), client.B().Exists().Key(mediaKeyPrefix+id).Build()).AsInt64()
-	if err != nil {
-		return false, err
-	}
-	return exists == 1, nil
+// client returns the shared Valkey client.
+func client() valkey.Client {
+	return utils.GetSingleton().Valkey
 }
 
 // Subscribe for expired media keys and delete the corresponding files from disk.

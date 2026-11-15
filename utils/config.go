@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/asaskevich/govalidator"
 	"github.com/kelseyhightower/envconfig"
@@ -70,6 +71,33 @@ type Config struct {
 	// refresh, upload). Burst is the bucket size, refill the rate afterwards.
 	RateLimitBurst     int `envconfig:"RATE_LIMIT_BURST" default:"20"`
 	RateLimitPerMinute int `envconfig:"RATE_LIMIT_PER_MINUTE" default:"60"`
+
+	// Comma separated proxies whose X-Forwarded-For header is trusted when the
+	// client IP is resolved. Only private networks by default: the reverse proxy
+	// runs inside them, and a public client can never inject its own address.
+	TrustedProxies string `envconfig:"TRUSTED_PROXIES" default:"127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"`
+
+	// Stops one account from exhausting shared storage.
+	MediaMaxPerUser  int `envconfig:"MEDIA_MAX_PER_USER" default:"200"`
+	MessageMaxQueued int `envconfig:"MESSAGE_MAX_QUEUED" default:"500"`
+
+	// WebSocket messages accepted from one connection per second.
+	WsMessageRate int `envconfig:"WS_MESSAGE_RATE" default:"20"`
+}
+
+// TrustedProxyList returns the configured proxies as a slice, ready for
+// gin.Engine.SetTrustedProxies.
+//
+//	@return []string
+func (c Config) TrustedProxyList() []string {
+	proxies := []string{}
+	for _, proxy := range strings.Split(c.TrustedProxies, ",") {
+		proxy = strings.TrimSpace(proxy)
+		if proxy != "" {
+			proxies = append(proxies, proxy)
+		}
+	}
+	return proxies
 }
 
 // Loads config from environmental values.

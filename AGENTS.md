@@ -37,6 +37,11 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 - **Login flow:** `POST /api/auth` only accepts a JWT whose `nonce` claim is a
   live `GET /api/auth/challenge` value (spent on use). Adding or removing a claim
   there breaks every client; the E2E test "the login token is single use" locks it.
+- **Limits are part of the contract:** `MESSAGE_MAX_QUEUED`, `MEDIA_MAX_PER_USER`
+  and `WS_MESSAGE_RATE` are the only thing keeping one account from exhausting
+  shared storage; do not raise them without a replacement.
+- **Client IP:** only `TRUSTED_PROXIES` may set `X-Forwarded-For`. Without that
+  the per IP rate limit is bypassable, so never call `SetTrustedProxies(nil)`.
 - **Offline queue contract:** a `msg:*` entry is deleted by the receiver's `ack`,
   never at send time. Changing that silently loses messages; the E2E test
   "an unacknowledged message is delivered again on reconnect" locks it.

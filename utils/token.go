@@ -11,16 +11,29 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 )
 
+// Token types. A token is only accepted for the purpose it was issued for, so
+// three different secrets are no longer the only thing keeping them apart.
+const (
+	TokenTypeAccess  = "access"
+	TokenTypeRefresh = "refresh"
+	TokenTypeWs      = "ws"
+)
+
 // Creates signed access token.
 //
 //	@param id
+//	@param lifespan
+//	@param secret
+//	@param tokenId
+//	@param tokenType
 //	@return string
 //	@return error
-func GenerateToken(id string, lifespan int, secret string, tokenId *string) (string, error) {
+func GenerateToken(id string, lifespan int, secret string, tokenId *string, tokenType string) (string, error) {
 	// Payload
 	now := time.Now()
 	claims := jwt.MapClaims{}
 	claims["sub"] = id
+	claims["typ"] = tokenType
 	claims["exp"] = now.Add(time.Second * time.Duration(lifespan)).Unix()
 	claims["iat"] = now.Unix()
 	claims["nbf"] = now.Unix()
@@ -45,13 +58,15 @@ func userIdFromClaims(token *jwt.Token) (string, error) {
 	return userId, nil
 }
 
-// Checks if given token is valid.
+// Checks if given token is valid and was issued for [expectedType].
 //
 //	@param tokenStr
 //	@param secret
+//	@param expectedType
 //	@return string
+//	@return *string
 //	@return error
-func TokenValid(tokenStr string, secret string) (string, *string, error) {
+func TokenValid(tokenStr string, secret string, expectedType string) (string, *string, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -66,7 +81,12 @@ func TokenValid(tokenStr string, secret string) (string, *string, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	tokenId := token.Claims.(jwt.MapClaims)["tokenId"]
+	claims := token.Claims.(jwt.MapClaims)
+	// A token minted for another purpose (or before types existed) is refused.
+	if claims["typ"] != expectedType {
+		return "", nil, fmt.Errorf("unexpected token type")
+	}
+	tokenId := claims["tokenId"]
 	var tokenIdStr *string
 	if tokenId != nil {
 		str, ok := tokenId.(string)

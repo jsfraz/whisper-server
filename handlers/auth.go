@@ -136,7 +136,7 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("login token challenge is unknown or already used"))
 	}
 	// Generate access token
-	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)
+	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil, utils.TokenTypeAccess)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -144,7 +144,7 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 	// later (account deletion, logout everywhere) instead of living out its TTL.
 	refreshTokenId := uuid.NewString()
 	refreshLifespan := utils.GetSingleton().Config.RefreshTokenLifespan
-	refreshToken, err := utils.GenerateToken(userId, refreshLifespan, utils.GetSingleton().Config.RefreshTokenSecret, &refreshTokenId)
+	refreshToken, err := utils.GenerateToken(userId, refreshLifespan, utils.GetSingleton().Config.RefreshTokenSecret, &refreshTokenId, utils.TokenTypeRefresh)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
@@ -162,7 +162,7 @@ func AuthUser(c *gin.Context, request *models.Auth) (*models.AuthResponse, error
 //	@return error
 func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.RefreshResponse, error) {
 	// Validate token and get user id
-	userId, tokenId, err := utils.TokenValid(refresh.RefreshToken, utils.GetSingleton().Config.RefreshTokenSecret)
+	userId, tokenId, err := utils.TokenValid(refresh.RefreshToken, utils.GetSingleton().Config.RefreshTokenSecret, utils.TokenTypeRefresh)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusUnauthorized, err)
 	}
@@ -170,14 +170,14 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 	if tokenId == nil {
 		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("refresh token is not revocable"))
 	}
-	// The session must still be live: account deletion and logout everywhere
-	// revoke it.
-	live, err := database.SessionExists(userId, *tokenId)
+	// The session must be live and is spent by this call: a stolen refresh
+	// token is only usable once, and the client gets a new one.
+	live, err := database.ConsumeRefreshSession(userId, *tokenId)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !live {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("refresh session was revoked"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("refresh session was revoked or already used"))
 	}
 	// Check if user exists
 	exists, err := database.UserExistsById(userId)
@@ -189,9 +189,19 @@ func RefreshUserAccessToken(c *gin.Context, refresh *models.Refresh) (*models.Re
 		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("current user does not exist"))
 	}
 	// Generate access token
-	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil)
+	accessToken, err := utils.GenerateToken(userId, utils.GetSingleton().Config.AccessTokenLifespan, utils.GetSingleton().Config.AccessTokenSecret, nil, utils.TokenTypeAccess)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	return models.NewRefreshResponse(accessToken), nil
+	// Rotate the refresh session.
+	refreshTokenId := uuid.NewString()
+	refreshLifespan := utils.GetSingleton().Config.RefreshTokenLifespan
+	refreshToken, err := utils.GenerateToken(userId, refreshLifespan, utils.GetSingleton().Config.RefreshTokenSecret, &refreshTokenId, utils.TokenTypeRefresh)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if err = database.StoreRefreshSession(userId, refreshTokenId, refreshLifespan); err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return models.NewRefreshResponse(accessToken, refreshToken), nil
 }

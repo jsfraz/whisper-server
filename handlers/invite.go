@@ -8,8 +8,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/gin-gonic/gin"
 )
+
+// maxActiveInvites caps how many unused invites may exist at once.
+const maxActiveInvites = 100
 
 // CreateInvite
 //
@@ -25,6 +29,20 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 	}
 	if !admin {
 		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to create invites"))
+	}
+	// An invite is sent to this address, so a typo is a bounced mail from our
+	// own domain.
+	if !govalidator.IsEmail(request.Mail) {
+		return c.AbortWithError(http.StatusBadRequest, errors.New("invalid e-mail address"))
+	}
+	// Cap the number of live invites: an abused admin token must not turn the
+	// server into an open relay for mail.
+	active, err := database.GetAllInvites()
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if len(*active) >= maxActiveInvites {
+		return c.AbortWithError(http.StatusTooManyRequests, errors.New("too many active invites"))
 	}
 	// Create invite
 	ttl := utils.GetSingleton().Config.InviteTtl

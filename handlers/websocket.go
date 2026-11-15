@@ -28,15 +28,19 @@ const (
 //
 //	@param c
 func WebSocketHandler(c *gin.Context) {
-	// Get access token from request
-	accessToken := c.Query("wsAccessToken")
+	// The token belongs in the Authorization header: a URL query ends up in
+	// proxy access logs. The query is still read for older clients.
+	accessToken := utils.ExtractTokenFromContext(c)
 	if accessToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "wsAccessToken is required"})
+		accessToken = c.Query("wsAccessToken")
+	}
+	if accessToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "access token is required"})
 		slog.Warn("websocket auth missing token")
 		return
 	}
 	// Validate access token
-	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret)
+	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret, utils.TokenTypeWs)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -112,12 +116,21 @@ func WebSocketHandler(c *gin.Context) {
 		// Register custom validators
 		validator := validator.New()
 		validator.RegisterValidation("type", models.ValidateWsMessageType)
+		// One connection may not flood the shared offline queues.
+		limiter := utils.NewMessageRateLimiter(utils.GetSingleton().Config.WsMessageRate)
 
 		for {
 			// Read and parse incoming message
 			messageType, payload, err := conn.Conn.ReadMessage()
 			if err != nil {
 				return // Terminates goroutine on read error
+			}
+
+			// Flood protection: close the connection instead of buffering
+			// unbounded work for everyone.
+			if !limiter.Allow() {
+				conn.SendError(errors.New("too many messages"))
+				return
 			}
 
 			// Check message type

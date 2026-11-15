@@ -55,6 +55,10 @@ sudo docker compose -f docker-compose.dev.yml --env-file .env.dev up -d
 | MESSAGE_TTL | Message retention time (in seconds) | No | 2592000 (30 days) |
 | RATE_LIMIT_BURST | Per client IP bucket size for register, auth, refresh and upload | No | 20 |
 | RATE_LIMIT_PER_MINUTE | Per client IP refill rate for those endpoints | No | 60 |
+| TRUSTED_PROXIES | Comma separated proxies whose `X-Forwarded-For` is trusted | No | `127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` |
+| MEDIA_MAX_PER_USER | Pending encrypted media files per account | No | 200 |
+| MESSAGE_MAX_QUEUED | Offline messages queued per account | No | 500 |
+| WS_MESSAGE_RATE | WebSocket messages accepted per connection per second | No | 20 |
 
 ### Firebase
 

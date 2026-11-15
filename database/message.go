@@ -73,7 +73,7 @@ func GetUserPrivateMessages(userId string) (*[]models.PrivateMessage, error) {
 	return &messages, nil
 }
 
-// Delete all private messages of given user.
+// Delete all private messages of given user and reset its queue counter.
 //
 //	@param userId
 //	@return error
@@ -88,7 +88,8 @@ func DeleteUserPrivateMessages(userId string) error {
 			return err
 		}
 	}
-	return nil
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Del().Key("msgqueue:"+userId).Build()).Error()
 }
 
 // Delete user private messages by keys.

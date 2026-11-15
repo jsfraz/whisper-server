@@ -40,9 +40,47 @@ type Hub struct {
 	Unregister chan *WSConnection
 	// Pending push notifications, handled off the message path
 	push chan string
+	// Positive user existence results, so a message does not cost a query
+	exists *userExistenceCache
 	// Mutex for thread-safe access to the Connections map
 	mu sync.RWMutex
 }
+
+// userExistenceCache remembers users that exist. Only positive results are
+// cached: a missing user must be re-checked, a known one saves a query per
+// message.
+type userExistenceCache struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+	ttl  time.Duration
+}
+
+func newUserExistenceCache(ttl time.Duration) *userExistenceCache {
+	return &userExistenceCache{seen: make(map[string]time.Time), ttl: ttl}
+}
+
+func (c *userExistenceCache) get(userId string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seen, ok := c.seen[userId]
+	if !ok {
+		return false
+	}
+	if time.Since(seen) > c.ttl {
+		delete(c.seen, userId)
+		return false
+	}
+	return true
+}
+
+func (c *userExistenceCache) put(userId string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.seen[userId] = time.Now()
+}
+
+// queueCounterPrefix counts the queued messages of one receiver.
+const queueCounterPrefix = "msgqueue:"
 
 // wsValidator validates WebSocket payloads. A validator is safe for concurrent
 // use, so one instance is shared instead of rebuilt per message.
@@ -65,6 +103,7 @@ func NewHub() *Hub {
 		Register:   make(chan *WSConnection, 16),
 		Unregister: make(chan *WSConnection, 16),
 		push:       make(chan string, pushQueueSize),
+		exists:     newUserExistenceCache(5 * time.Second),
 	}
 }
 
@@ -131,6 +170,24 @@ func (h *Hub) handlePrivateMessage(senderId string, payload json.RawMessage) {
 	// Validate private message
 	if err := wsValidator.Struct(privateMessage); err != nil {
 		h.sendError(senderId, err)
+		return
+	}
+	// The timestamp keys the queue and the dedup, so it has to be close to now.
+	if !models.IsSentAtPlausible(privateMessage.SentAt) {
+		h.sendError(senderId, errors.New("message timestamp is not plausible"))
+		return
+	}
+	// The socket was authenticated once; the account may be gone since.
+	active, err := h.userIsActive(senderId)
+	if err != nil {
+		h.sendError(senderId, err)
+		return
+	}
+	if !active {
+		h.sendError(senderId, errors.New("account is no longer active"))
+		if conn := h.connectionOf(senderId); conn != nil {
+			conn.Close()
+		}
 		return
 	}
 	// Check whether user is sending message to self (in production)
@@ -214,6 +271,10 @@ func (h *Hub) handleAck(receiverId string, payload json.RawMessage) {
 	if err := client.Do(context.Background(), client.B().Del().Key(keys...).Build()).Error(); err != nil {
 		slog.Error("failed to ack queued messages", "error", SanitizeLogValue(err.Error()))
 	}
+	// Give the queue slot back. A negative counter only loosens the cap.
+	if _, err := client.Do(context.Background(), client.B().Decrby().Key(queueCounterPrefix+receiverId).Decrement(int64(len(keys))).Build()).AsInt64(); err != nil {
+		slog.Warn("failed to update queue counter", "error", SanitizeLogValue(err.Error()))
+	}
 }
 
 // Send error response to sender
@@ -267,21 +328,43 @@ func (h *Hub) pushLoop() {
 	}
 }
 
+// userIsActive reports whether an account may still act: it exists and is not
+// pending deletion.
+func (h *Hub) userIsActive(userId string) (bool, error) {
+	toDelete, err := h.willUserBeDeleted(userId)
+	if err != nil {
+		return false, err
+	}
+	if toDelete {
+		return false, nil
+	}
+	return h.userExistsById(userId)
+}
+
 // Check if user exists by ID.
 //
 //	@param userId
 //	@return bool
 //	@return error
 func (h *Hub) userExistsById(userId string) (bool, error) {
+	if h.exists.get(userId) {
+		return true, nil
+	}
 	var count int64
 	err := GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
+	if count > 0 {
+		h.exists.put(userId)
+	}
 	return count > 0, nil
 }
 
 // Push PrivateMessage to Valkey.
+//
+// The per receiver counter keeps one account from filling the queue of another;
+// it expires with the queue itself.
 //
 //	@param receiverId
 //	@param message
@@ -293,10 +376,32 @@ func (h *Hub) pushMessage(receiverId string, message models.PrivateMessage, ttl 
 	if err != nil {
 		return err
 	}
-	// Push
 	client := GetSingleton().Valkey
+	counterKey := queueCounterPrefix + receiverId
+	// Count first, so a full queue rejects the message before it is written.
+	queued := int64(-1)
+	if maxQueued := int64(GetSingleton().Config.MessageMaxQueued); maxQueued > 0 {
+		queued, err = client.Do(context.Background(), client.B().Incr().Key(counterKey).Build()).AsInt64()
+		if err != nil {
+			return err
+		}
+		if err := client.Do(context.Background(), client.B().Expire().Key(counterKey).Seconds(int64(ttl)).Build()).Error(); err != nil {
+			slog.Warn("failed to set queue counter ttl", "error", SanitizeLogValue(err.Error()))
+		}
+		if queued > maxQueued {
+			_, _ = client.Do(context.Background(), client.B().Decr().Key(counterKey).Build()).AsInt64()
+			return errors.New("receiver's queue is full")
+		}
+	}
+	// Push
 	key := models.OfflineQueueKey(receiverId, message.SenderId, message.SentAt)
-	return client.Do(context.Background(), client.B().Set().Key(key).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
+	if err := client.Do(context.Background(), client.B().Set().Key(key).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error(); err != nil {
+		if queued > 0 {
+			_, _ = client.Do(context.Background(), client.B().Decr().Key(counterKey).Build()).AsInt64()
+		}
+		return err
+	}
+	return nil
 }
 
 // Check if user with given ID will be deleted (O(1) with SET).
@@ -329,9 +434,11 @@ func (h *Hub) DeleteUsers(ids []string) []string {
 				continue
 			}
 			online = append(online, conn.UserId)
-			// Send delete message
+			// Send delete message and drop the connection: the client cannot
+			// decide to stay online.
 			response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
 			conn.Send(response)
+			conn.Close()
 		}
 	}
 	return online

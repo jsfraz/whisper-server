@@ -50,6 +50,11 @@ func (fs noDirFS) Open(name string) (http.File, error) {
 func NewRouter() (*fizz.Fizz, error) {
 	// Gin instance
 	engine := gin.New()
+	// Only the local reverse proxy may set the client address; otherwise any
+	// client could rotate X-Forwarded-For and dodge the rate limit.
+	if err := engine.SetTrustedProxies(utils.GetSingleton().Config.TrustedProxyList()); err != nil {
+		return nil, fmt.Errorf("trusted proxies: %w", err)
+	}
 	// Limit in-memory buffering of multipart uploads; larger files stream to a temp file
 	engine.MaxMultipartMemory = 8 << 20 // 8 MiB
 	// Logger middleware (structured, request id)
