@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -151,7 +152,19 @@ func GetUserPublicKey(userId string) (string, error) {
 	return publicKey, nil
 }
 
-// Search users by username. Return all except the user.
+// Escape LIKE wildcards so user input is matched literally.
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
+}
+
+// Self-chat is a debug-only feature.
+func searchExcludesSelf() bool {
+	return utils.GetSingleton().Config.GinMode == "release"
+}
+
+// Search users by username. Return at most 50, except the user.
 //
 //	@param username
 //	@param userId
@@ -164,25 +177,15 @@ func SearchUsersByUsername(username string, userId string) (*[]models.User, erro
 	}
 	var users []models.User
 
-	skipUser := true
-	if utils.GetSingleton().Config.GinMode != "release" {
-		skipUser = false
+	query := utils.GetSingleton().Sqlite.Model(&models.User{}).
+		Where("username LIKE ? ESCAPE '\\'", "%"+escapeLike(username)+"%")
+	if searchExcludesSelf() {
+		query = query.Where("id != ?", userId)
 	}
-
 	if len(toDelete) != 0 {
-		if skipUser {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ? AND id NOT IN ?", "%"+username+"%", userId, toDelete).Find(&users).Error
-		} else {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id NOT IN ?", "%"+username+"%", toDelete).Find(&users).Error
-		}
-	} else {
-		if skipUser {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
-		} else {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ?", "%"+username+"%").Find(&users).Error
-		}
+		query = query.Where("id NOT IN ?", toDelete)
 	}
-	if err != nil {
+	if err = query.Order("username").Limit(50).Find(&users).Error; err != nil {
 		return nil, err
 	}
 	return &users, nil

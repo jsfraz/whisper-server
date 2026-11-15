@@ -8,6 +8,7 @@ import (
 	"jsfraz/whisper-server/utils"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -92,8 +93,12 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 //	@return *[]models.User
 //	@return error
 func SearchUsers(c *gin.Context, request *models.UsernameQuery) (*[]models.User, error) {
+	username := strings.TrimSpace(request.Username)
+	if username == "" {
+		return nil, c.AbortWithError(http.StatusBadRequest, errors.New("username is required"))
+	}
 	userId, _ := c.Get("userId")
-	users, err := database.SearchUsersByUsername(request.Username, userId.(string))
+	users, err := database.SearchUsersByUsername(username, userId.(string))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
