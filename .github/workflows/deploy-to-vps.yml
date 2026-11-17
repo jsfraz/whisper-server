@@ -113,7 +113,7 @@ jobs:
 
       - name: Open or update deploy failure issue
         if: failure()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         with:
@@ -146,7 +146,7 @@ jobs:
 
       - name: Close deploy failure issue
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const title = '[deploy] Production deploy failed';
