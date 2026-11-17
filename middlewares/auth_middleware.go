@@ -8,6 +8,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// The database lookups, behind variables so the middlewares can be tested
+// without a SQLCipher database.
+var (
+	userExistsById    = database.UserExistsById
+	willUserBeDeleted = database.WillUserBeDeleted
+)
+
 // Middleware for user authentication.
 //
 // If the user has a valid access token, it sets its ID in the context.
@@ -24,7 +31,7 @@ func AuthMiddleware(c *gin.Context) {
 		return
 	}
 	// Check if user exists
-	exists, err := database.UserExistsById(userId)
+	exists, err := userExistsById(userId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -33,12 +40,13 @@ func AuthMiddleware(c *gin.Context) {
 	// Current user does not exist
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorCurrentUserDoesNotExist})
-		c.AbortWithError(http.StatusUnauthorized, err)
+		// err is nil here: AbortWithError would panic on it.
+		c.Abort()
 		return
 	}
 	// A user an admin deleted must lose API access immediately, not only on the
 	// next WebSocket connect.
-	deletePending, err := database.WillUserBeDeleted(userId)
+	deletePending, err := willUserBeDeleted(userId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		c.AbortWithError(http.StatusInternalServerError, err)
@@ -46,7 +54,8 @@ func AuthMiddleware(c *gin.Context) {
 	}
 	if deletePending {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorCurrentUserDoesNotExist})
-		c.AbortWithError(http.StatusUnauthorized, err)
+		// err is nil here: AbortWithError would panic on it.
+		c.Abort()
 		return
 	}
 	// Token is valid, set it to context and continue
