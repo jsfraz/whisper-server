@@ -19,20 +19,30 @@ const (
 	TokenTypeWs      = "ws"
 )
 
+// TokenClaims is what a verified token says. DeviceId is the device the token
+// was issued to: a revoked device keeps its tokens, they just stop working.
+type TokenClaims struct {
+	UserId   string
+	DeviceId string
+	TokenId  *string
+}
+
 // Creates signed access token.
 //
 //	@param id
+//	@param deviceId
 //	@param lifespan
 //	@param secret
 //	@param tokenId
 //	@param tokenType
 //	@return string
 //	@return error
-func GenerateToken(id string, lifespan int, secret string, tokenId *string, tokenType string) (string, error) {
+func GenerateToken(id string, deviceId string, lifespan int, secret string, tokenId *string, tokenType string) (string, error) {
 	// Payload
 	now := time.Now()
 	claims := jwt.MapClaims{}
 	claims["sub"] = id
+	claims["dev"] = deviceId
 	claims["typ"] = tokenType
 	claims["exp"] = now.Add(time.Second * time.Duration(lifespan)).Unix()
 	claims["iat"] = now.Unix()
@@ -63,10 +73,9 @@ func userIdFromClaims(token *jwt.Token) (string, error) {
 //	@param tokenStr
 //	@param secret
 //	@param expectedType
-//	@return string
-//	@return *string
+//	@return *TokenClaims
 //	@return error
-func TokenValid(tokenStr string, secret string, expectedType string) (string, *string, error) {
+func TokenValid(tokenStr string, secret string, expectedType string) (*TokenClaims, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -74,28 +83,34 @@ func TokenValid(tokenStr string, secret string, expectedType string) (string, *s
 		return []byte(secret), nil
 	})
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	// User ID
 	userId, err := userIdFromClaims(token)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	claims := token.Claims.(jwt.MapClaims)
 	// A token minted for another purpose (or before types existed) is refused.
 	if claims["typ"] != expectedType {
-		return "", nil, fmt.Errorf("unexpected token type")
+		return nil, fmt.Errorf("unexpected token type")
+	}
+	// Every token belongs to a device. A token without one predates the device
+	// registry and cannot be checked for revocation, so it is refused.
+	deviceId, ok := claims["dev"].(string)
+	if !ok || deviceId == "" {
+		return nil, fmt.Errorf("invalid device claim")
 	}
 	tokenId := claims["tokenId"]
 	var tokenIdStr *string
 	if tokenId != nil {
 		str, ok := tokenId.(string)
 		if !ok {
-			return "", nil, fmt.Errorf("invalid tokenId claim")
+			return nil, fmt.Errorf("invalid tokenId claim")
 		}
 		tokenIdStr = &str
 	}
-	return userId, tokenIdStr, nil
+	return &TokenClaims{UserId: userId, DeviceId: deviceId, TokenId: tokenIdStr}, nil
 }
 
 // Gets token from Gin context.

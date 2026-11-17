@@ -119,8 +119,10 @@ func NewRouter() (*fizz.Fizz, error) {
 	engine.GET("/ws", handlers.WebSocketHandler)
 
 	// Setup other routes
+	VersionRoute(grp)
 	AuthRoute(grp)
 	UserRoute(grp)
+	MessageRoute(grp)
 	InviteRoute(grp)
 	WsAuthRoute(grp)
 	FirebaseRoute(grp)

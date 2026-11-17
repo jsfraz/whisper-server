@@ -34,7 +34,7 @@ jobs:
         env:
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
           SERVER_URL: ${{ secrets.SERVER_URL }}
-          SQLITE_PASSWORD: ${{ secrets.SQLITE_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           VALKEY_PASSWORD: ${{ secrets.VALKEY_PASSWORD }}
           ADMIN_MAIL: ${{ secrets.ADMIN_MAIL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -49,7 +49,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          envs: IMAGE_TAG,PROJECT_PATH,SERVER_URL,SQLITE_PASSWORD,VALKEY_PASSWORD,ADMIN_MAIL,SMTP_HOST,SMTP_USER,SMTP_PASSWORD,ACCESS_TOKEN_SECRET,REFRESH_TOKEN_SECRET,WS_ACCESS_TOKEN_SECRET,FIREBASE_JSON_BASE64
+          envs: IMAGE_TAG,PROJECT_PATH,SERVER_URL,POSTGRES_PASSWORD,VALKEY_PASSWORD,ADMIN_MAIL,SMTP_HOST,SMTP_USER,SMTP_PASSWORD,ACCESS_TOKEN_SECRET,REFRESH_TOKEN_SECRET,WS_ACCESS_TOKEN_SECRET,FIREBASE_JSON_BASE64
           script: |
             set -euo pipefail
 
@@ -70,7 +70,7 @@ jobs:
             mkdir -p data
             {
               printf 'SERVER_URL=%s\n' "$SERVER_URL"
-              printf 'SQLITE_PASSWORD=%s\n' "$SQLITE_PASSWORD"
+              printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
               printf 'VALKEY_PASSWORD=%s\n' "$VALKEY_PASSWORD"
               printf 'ADMIN_MAIL=%s\n' "$ADMIN_MAIL"
               printf 'SMTP_HOST=%s\n' "$SMTP_HOST"

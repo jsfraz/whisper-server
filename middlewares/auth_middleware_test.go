@@ -10,26 +10,40 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const testAccessSecret = "test-access-secret"
+const (
+	testAccessSecret = "test-access-secret"
+	testDeviceID     = "device-id"
+)
 
 // accessToken signs an access token for userID, which does not have to exist.
 func accessToken(t *testing.T, userID string) string {
 	t.Helper()
 	utils.GetSingleton().Config.AccessTokenSecret = testAccessSecret
-	token, err := utils.GenerateToken(userID, 60, testAccessSecret, nil, utils.TokenTypeAccess)
+	token, err := utils.GenerateToken(userID, testDeviceID, 60, testAccessSecret, nil, utils.TokenTypeAccess)
 	if err != nil {
 		t.Fatalf("signing the token failed: %v", err)
 	}
 	return token
 }
 
-// stubDatabase replaces both user lookups the middlewares make.
+// stubDatabase replaces the database lookups the middlewares make.
 func stubDatabase(t *testing.T, exists bool, deletePending bool, err error) {
 	t.Helper()
-	previousExists, previousDeleted := userExistsById, willUserBeDeleted
+	previousExists, previousDeleted, previousDevice := userExistsById, willUserBeDeleted, isDeviceActive
 	userExistsById = func(string) (bool, error) { return exists, err }
 	willUserBeDeleted = func(string) (bool, error) { return deletePending, err }
-	t.Cleanup(func() { userExistsById, willUserBeDeleted = previousExists, previousDeleted })
+	isDeviceActive = func(string, string) (bool, error) { return true, nil }
+	t.Cleanup(func() {
+		userExistsById, willUserBeDeleted, isDeviceActive = previousExists, previousDeleted, previousDevice
+	})
+}
+
+// stubRevokedDevice makes every device look revoked.
+func stubRevokedDevice(t *testing.T) {
+	t.Helper()
+	previousDevice := isDeviceActive
+	isDeviceActive = func(string, string) (bool, error) { return false, nil }
+	t.Cleanup(func() { isDeviceActive = previousDevice })
 }
 
 func requestWithToken(t *testing.T, token string) *http.Request {
@@ -141,5 +155,34 @@ func TestUserDeletionMiddlewarePendingUserDoesNotPanic(t *testing.T) {
 	}
 	if handlerCalled {
 		t.Fatal("the handler ran for a user waiting for deletion")
+	}
+}
+
+// TestAuthMiddlewareRejectsRevokedDevice locks the hard lockout: a stolen device
+// keeps its key and its unexpired access token, and still gets nothing.
+func TestAuthMiddlewareRejectsRevokedDevice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stubDatabase(t, true, false, nil)
+	stubRevokedDevice(t)
+
+	handlerCalled := false
+	router := gin.New()
+	router.Use(AuthMiddleware)
+	router.GET("/ping", func(c *gin.Context) {
+		handlerCalled = true
+		c.Status(http.StatusOK)
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, requestWithToken(t, accessToken(t, "existing-user")))
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if !strings.Contains(recorder.Body.String(), utils.ErrorDeviceRevoked) {
+		t.Fatalf("body = %q, want the %q error", recorder.Body.String(), utils.ErrorDeviceRevoked)
+	}
+	if handlerCalled {
+		t.Fatal("the handler ran for a revoked device")
 	}
 }

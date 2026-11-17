@@ -8,7 +8,7 @@ type WsMessageType string
 // Supported topics
 const (
 	WsMessageTopicMessage WsMessageType = "message"
-	WsMessageTopicAck     WsMessageType = "ack"
+	WsMessageTopicSync    WsMessageType = "sync"
 )
 
 // ValidateWsMessageType is a custom validator for WsMessageTopic
@@ -18,7 +18,7 @@ const (
 func ValidateWsMessageType(fl validator.FieldLevel) bool {
 	topic := WsMessageType(fl.Field().String())
 	switch topic {
-	case WsMessageTopicMessage, WsMessageTopicAck:
+	case WsMessageTopicMessage, WsMessageTopicSync:
 		return true
 	}
 	return false

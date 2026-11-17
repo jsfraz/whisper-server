@@ -17,9 +17,10 @@ import (
 //	@return error
 func WebSocketAuth(c *gin.Context) (*models.WsAuthResponse, error) {
 	userId, _ := c.Get("userId")
+	deviceId, _ := c.Get("deviceId")
 	// Generate access token
 	tokenId := uuid.New().String()
-	accessToken, err := utils.GenerateToken(userId.(string), utils.GetSingleton().Config.WsAccessTokenLifespan, utils.GetSingleton().Config.WsAccessTokenSecret, &tokenId, utils.TokenTypeWs)
+	accessToken, err := utils.GenerateToken(userId.(string), deviceId.(string), utils.GetSingleton().Config.WsAccessTokenLifespan, utils.GetSingleton().Config.WsAccessTokenSecret, &tokenId, utils.TokenTypeWs)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}

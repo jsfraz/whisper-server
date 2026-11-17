@@ -7,6 +7,8 @@ type User struct {
 	Username  string `json:"username" validate:"required" example:"ex4ample"`
 	PublicKey string `json:"publicKey" validate:"required" example:"RSA_PUBLIC_KEY_PEM"`
 	Admin     bool   `json:"admin" validate:"required" example:"false"`
+	// Server-side retention of the ciphertext archive (days).
+	RetentionDays int `json:"retentionDays" validate:"required" example:"30"`
 }
 
 // Return new user.
@@ -22,5 +24,6 @@ func NewUser(username string, publicKey string, admin bool) *User {
 	u.Username = username
 	u.PublicKey = publicKey
 	u.Admin = admin
+	u.RetentionDays = DefaultRetentionDays
 	return u
 }

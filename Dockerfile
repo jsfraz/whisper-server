@@ -3,17 +3,15 @@ FROM golang:1.27.4-alpine AS build
 
 WORKDIR /app
 
-# Install build dependencies for CGO (SQLCipher)
-RUN apk add --no-cache gcc musl-dev
-
 # Download dependencies first (cached layer)
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code and build
+# Copy source code and build. The version is baked in, so /api/version reports
+# the tag this image was cut from.
+ARG VERSION=0.1.0
 COPY . .
-ENV CGO_ENABLED=1
-RUN CGO_CFLAGS="-Doff64_t=off_t -Dpread64=pread -Dpwrite64=pwrite" go build -ldflags="-s -w" -o whisper-server
+RUN go build -ldflags="-s -w -X jsfraz/whisper-server/utils.Version=${VERSION}" -o whisper-server
 
 # Stage
 FROM alpine
@@ -30,7 +28,7 @@ COPY --from=build /app/static ./static
 # Create a directory for data persistence
 RUN mkdir -p /app/data
 
-# Expose the port that the application will run on
+# Expose the port that the application is listening on
 EXPOSE 8080
 
 # Health check

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
 )
 
@@ -40,13 +39,13 @@ func WebSocketHandler(c *gin.Context) {
 		return
 	}
 	// Validate access token
-	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret, utils.TokenTypeWs)
-	if err != nil {
+	claims, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret, utils.TokenTypeWs)
+	if err != nil || claims.TokenId == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorInvalidToken})
 		return
 	}
 	// Check if token exists in Valkey
-	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
+	exists, accessTokenById, err := database.WsAccessTokenExists(*claims.TokenId)
 	if err != nil {
 		slog.Error("failed to load ws access token", "error", utils.SanitizeLogValue(err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
@@ -59,6 +58,17 @@ func WebSocketHandler(c *gin.Context) {
 	// Check if provided token and token from Valkey are the same
 	if accessToken != accessTokenById {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorAccessTokenMismatch})
+		return
+	}
+	// A revoked device has no live socket, even with an unexpired ws token.
+	active, err := database.IsDeviceActive(claims.UserId, claims.DeviceId)
+	if err != nil {
+		slog.Error("failed to load device", "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
+		return
+	}
+	if !active {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorDeviceRevoked})
 		return
 	}
 
@@ -86,8 +96,8 @@ func WebSocketHandler(c *gin.Context) {
 	})
 
 	// Create new WebSocket connection, writing runs in its own goroutine so a
-	// stalled client can never block the hub.
-	conn := utils.NewWSConnection(ws, userId)
+	// stalled client can never block delivery.
+	conn := utils.NewWSConnection(ws, claims.UserId, claims.DeviceId)
 	go conn.WriteLoop()
 	// Register new connection with the hub
 	utils.GetSingleton().Hub.Register <- conn
@@ -109,14 +119,11 @@ func WebSocketHandler(c *gin.Context) {
 			return
 		}
 
-		// Send messages from cache. They stay queued until the client
-		// acknowledges them, so a crash before storing loses nothing.
-		sendMessagesFromCache(conn)
+		// Nothing is pushed on connect: the client asks for its delta with a
+		// sync frame carrying its cursor, so a phone that was away for a week
+		// fetches only what it missed.
 
-		// Register custom validators
-		validator := validator.New()
-		validator.RegisterValidation("type", models.ValidateWsMessageType)
-		// One connection may not flood the shared offline queues.
+		// One connection may not flood the shared server.
 		limiter := utils.NewMessageRateLimiter(utils.GetSingleton().Config.WsMessageRate)
 
 		for {
@@ -149,42 +156,18 @@ func WebSocketHandler(c *gin.Context) {
 			}
 
 			// Validate message
-			err = validator.Struct(msg)
+			err = wsValidator.Struct(msg)
 			if err != nil {
 				conn.SendError(errors.New(utils.ErrorInvalidMessage))
 				continue
 			}
 
-			// Process message based on action type
-			utils.GetSingleton().Hub.Broadcast <- struct {
-				SenderId string
-				Message  models.WsMessage
-			}{
-				SenderId: conn.UserId,
-				Message:  msg,
-			}
+			// Archiving touches the database and a slow write must not stall
+			// the read loop of the other devices, so each frame is handled in
+			// its own goroutine.
+			go ProcessWsMessage(conn, msg)
 		}
 	}()
-}
-
-// Send messages from cache. The entries are removed by the client's
-// acknowledgement, not here: a failed write must not lose them.
-func sendMessagesFromCache(conn *utils.WSConnection) {
-	// Get messages from cache
-	messages, err := database.GetUserPrivateMessages(conn.UserId)
-	if err != nil {
-		conn.SendError(err)
-		return
-	}
-	// Send messages. The queue is bounded by wsSendBuffer, so a large backlog is
-	// written with a wait per frame: dropping frames here would lose messages
-	// that the client has not acknowledged yet.
-	if len(*messages) > 0 {
-		response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
-		if err := conn.SendSync(response); err != nil {
-			slog.Warn("failed to send queued messages", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
-		}
-	}
 }
 
 // Checks if user account should be deleted, sends delete message and deletes user.
@@ -207,12 +190,21 @@ func checkAccountDeletion(conn *utils.WSConnection) (bool, error) {
 		response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
 		conn.Send(response)
 		// Delete ID from Valkey
-		database.RemoveDeletedUserId(conn.UserId)
-		// Delete messages from Valkey
-		database.DeleteUserPrivateMessages(conn.UserId)
+		if err := database.RemoveDeletedUserId(conn.UserId); err != nil {
+			slog.Error("failed to clear deleted user id", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
+		// Delete messages from the archive
+		if err := database.DeleteUserMessages(conn.UserId); err != nil {
+			slog.Error("failed to delete user messages", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
+		// Delete devices
+		if err := database.DeleteUserDevices(conn.UserId); err != nil {
+			slog.Error("failed to delete user devices", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
 		// Delete media from server
-		database.DeleteUserMedia(conn.UserId)
-
+		if err := database.DeleteUserMedia(conn.UserId); err != nil {
+			slog.Error("failed to delete user media", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
 	}
 	return toDelete, nil
 }

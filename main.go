@@ -49,8 +49,8 @@ func main() {
 	singleton.RegisterAdminTemplate = registerAdminTemplate
 	singleton.RegisterInviteTemplate = registerInviteTemplate
 
-	// Setup SQLite
-	database.InitSqlite()
+	// Setup PostgreSQL
+	database.InitDb()
 	// Setup Valkey
 	database.InitValkey()
 
@@ -101,6 +101,10 @@ func main() {
 
 	// Reconcile media files whose expiry notification was missed (restart, crash, outage)
 	go database.RunMediaSweeper(10 * time.Minute)
+
+	// Delete archived ciphertext past its retention. The archive is also the
+	// offline buffer, so this is the only thing that bounds it.
+	go database.RunMessageSweeper(time.Hour)
 
 	// Create admin invite if admin does not exist
 	err = database.CreateAdminInvite()

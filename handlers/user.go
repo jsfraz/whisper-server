@@ -70,11 +70,15 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
-	// Delete messages and sessions from Valkey, and media from disk. A failure
-	// here leaves ciphertext behind, so it must not pass silently.
+	// Delete messages, devices, sessions and media. A failure here leaves
+	// ciphertext behind, so it must not pass silently.
 	for _, userId := range request.Ids {
-		if err := database.DeleteUserPrivateMessages(userId); err != nil {
+		if err := database.DeleteUserMessages(userId); err != nil {
 			slog.Error("failed to delete user messages", "user_id", utils.SanitizeLogValue(userId), "error", utils.SanitizeLogValue(err.Error()))
+			return c.AbortWithError(http.StatusInternalServerError, err)
+		}
+		if err := database.DeleteUserDevices(userId); err != nil {
+			slog.Error("failed to delete user devices", "user_id", utils.SanitizeLogValue(userId), "error", utils.SanitizeLogValue(err.Error()))
 			return c.AbortWithError(http.StatusInternalServerError, err)
 		}
 		if err := database.DeleteRefreshSessions(userId); err != nil {
@@ -86,13 +90,9 @@ func DeleteUsers(c *gin.Context, request *models.IdsRequest) error {
 			return c.AbortWithError(http.StatusInternalServerError, err)
 		}
 	}
-	// Send ws message to client
-	onlineIds := utils.GetSingleton().Hub.DeleteUsers(request.Ids)
-	// Delete IDs from Valkey
-	for _, id := range onlineIds {
-		if err := database.RemoveDeletedUserId(id); err != nil {
-			slog.Error("failed to clear deleted user id", "user_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
-		}
+	// Close the sockets of the deleted accounts.
+	for _, id := range request.Ids {
+		utils.GetSingleton().Hub.CloseUser(id)
 	}
 	return nil
 }
@@ -169,7 +169,13 @@ func DeleteMe(c *gin.Context) error {
 	}
 
 	// Delete messages for the user
-	err = database.DeleteUserPrivateMessages(userId.(string))
+	err = database.DeleteUserMessages(userId.(string))
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	// Delete the device registry rows
+	err = database.DeleteUserDevices(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}

@@ -1,36 +1,27 @@
 package models
 
-import (
-	"strconv"
-	"testing"
-	"time"
-)
+import "testing"
 
-// TestOfflineQueueKeyIsStable locks the ack contract: the receiving client
-// sends back the sender id and sentAt it received, and the server must derive
-// the same key to remove the entry.
-func TestOfflineQueueKeyIsStable(t *testing.T) {
-	sentAt := time.Date(2026, 11, 15, 20, 0, 0, 123456789, time.UTC)
-	key := OfflineQueueKey("receiver", "sender", sentAt)
-	want := "msg:receiver_sender_" + strconv.FormatInt(sentAt.UnixNano(), 10)
-	if key != want {
-		t.Fatalf("key = %q, want %q", key, want)
+// TestConversationKeyIsOrderIndependent locks the archive's conversation key:
+// the same two accounts must land in one index range regardless of who sends.
+func TestConversationKeyIsOrderIndependent(t *testing.T) {
+	key := ConversationKey("aaaaaaaa-0000-0000-0000-000000000001", "bbbbbbbb-0000-0000-0000-000000000002")
+	if key != ConversationKey("bbbbbbbb-0000-0000-0000-000000000002", "aaaaaaaa-0000-0000-0000-000000000001") {
+		t.Fatal("conversation key depends on the argument order")
 	}
-	// A resent message (same participants, same client timestamp) must land on
-	// the same key instead of creating a second copy.
-	again := OfflineQueueKey("receiver", "sender", sentAt.In(time.FixedZone("CET", 3600)))
-	if again != key {
-		t.Fatalf("key depends on the timezone: %q != %q", again, key)
+	if key != "aaaaaaaa-0000-0000-0000-000000000001|bbbbbbbb-0000-0000-0000-000000000002" {
+		t.Fatalf("unexpected key: %q", key)
 	}
 }
 
-// TestOfflineQueueKeyIsScopedToConversation keeps two senders apart.
-func TestOfflineQueueKeyIsScopedToConversation(t *testing.T) {
-	sentAt := time.Now().UTC()
-	if OfflineQueueKey("receiver", "senderA", sentAt) == OfflineQueueKey("receiver", "senderB", sentAt) {
-		t.Fatal("keys of two senders collide")
+// TestToWireSetsThePeerOfTheViewer keeps a message readable from both sides:
+// the recipient must not see its own id as the peer.
+func TestToWireSetsThePeerOfTheViewer(t *testing.T) {
+	message := PrivateMessage{SenderId: "sender", ReceiverId: "receiver"}
+	if peer := message.ToWire("receiver", true).PeerId; peer != "sender" {
+		t.Fatalf("receiver peer = %q, want sender", peer)
 	}
-	if OfflineQueueKey("receiverA", "sender", sentAt) == OfflineQueueKey("receiverB", "sender", sentAt) {
-		t.Fatal("keys of two receivers collide")
+	if peer := message.ToWire("sender", true).PeerId; peer != "receiver" {
+		t.Fatalf("sender peer = %q, want receiver", peer)
 	}
 }

@@ -2,8 +2,8 @@
 
 Operational procedures for the production VPS. The deployment is a Docker
 Compose project in `$PROJECT_PATH/whisper-server`; the server listens on
-`127.0.0.1:8081` and stores state in the `whisper_data` and `valkey_data`
-volumes.
+`127.0.0.1:8081` and stores state in the `whisper_data`, `valkey_data` and
+`postgres_data` volumes.
 
 Replace `$APP_DIR` with the absolute path to the compose project.
 
@@ -24,7 +24,7 @@ cd "$APP_DIR"
 docker compose -f docker-compose.prod.yml --env-file .env.prod restart whisper-server
 ```
 
-A restart keeps SQLite, Valkey and media on disk. If the process keeps
+A restart keeps PostgreSQL, Valkey and media on disk. If the process keeps
 crash-looping, check `docker compose logs --tail=200 whisper-server`; most
 startup failures are a missing `data/firebase.json` or a bad `.env.prod`.
 
@@ -74,7 +74,7 @@ Rotate one secret at a time, update the GitHub secret, redeploy, and verify
 | `VALKEY_PASSWORD` | Update `.env.prod` and restart both services. Data survives; no re-encryption. |
 | `SMTP_PASSWORD` | Invite e-mails fail until fixed; no impact on existing users. |
 | `FIREBASE_JSON_BASE64` | Push notifications fail until fixed; messages, media and WS delivery keep working. |
-| `SQLITE_PASSWORD` | **Do not rotate by editing `.env.prod`.** The database is encrypted with this key. Rekeying requires an offline backup and `PRAGMA rekey`, then a new secret. |
+| `POSTGRES_PASSWORD` | Rotate with `ALTER USER whisper WITH PASSWORD` inside the container, then update `.env.prod`. The server reads it from `DATABASE_URL`, so both have to match. |
 
 ## Host kernel: vm.overcommit_memory
 
@@ -113,18 +113,25 @@ sweep that finds files to delete logs `removed orphaned media files`.
 
 ## Database backup
 
-Stop the server before copying the SQLite file so the backup is consistent:
+The `postgres_data` volume is the only copy of the accounts and the ciphertext
+archive. Dump it with `pg_dump` while the server runs; no downtime needed:
 
 ```bash
 cd "$APP_DIR"
-docker compose -f docker-compose.prod.yml --env-file .env.prod stop whisper-server
-docker run --rm -v whisper_whisper_data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/whisper-data.tgz -C /data .
-docker compose -f docker-compose.prod.yml --env-file .env.prod start whisper-server
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T whisper-postgres \
+  pg_dump -U whisper whisper | gzip > "whisper-$(date +%F).sql.gz"
 ```
 
-Confirm the volume name with `docker volume ls`; Compose prefixes project
-volumes with the project name from `docker-compose.prod.yml` (`whisper`).
+Restore into an empty database:
+
+```bash
+gunzip -c whisper-2026-01-01.sql.gz | \
+  docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T whisper-postgres \
+  psql -U whisper whisper
+```
+
+The archive retention sweeper runs hourly and deletes rows past `expires_at`, so
+an old dump is a view of the retention window, not of all history.
 
 ## Deploy failed
 

@@ -33,8 +33,9 @@ type outgoing struct {
 }
 
 type WSConnection struct {
-	Conn   *websocket.Conn
-	UserId string
+	Conn     *websocket.Conn
+	UserId   string
+	DeviceId string
 
 	out  chan outgoing
 	done chan struct{}
@@ -43,12 +44,13 @@ type WSConnection struct {
 
 // NewWSConnection wraps an upgraded socket. Call WriteLoop in its own goroutine
 // before using Send.
-func NewWSConnection(conn *websocket.Conn, userId string) *WSConnection {
+func NewWSConnection(conn *websocket.Conn, userId string, deviceId string) *WSConnection {
 	return &WSConnection{
-		Conn:   conn,
-		UserId: userId,
-		out:    make(chan outgoing, wsSendBuffer),
-		done:   make(chan struct{}),
+		Conn:     conn,
+		UserId:   userId,
+		DeviceId: deviceId,
+		out:      make(chan outgoing, wsSendBuffer),
+		done:     make(chan struct{}),
 	}
 }
 

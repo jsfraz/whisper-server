@@ -12,3 +12,4 @@ single home repository live in the Notion decision log.
 | [0004](0004-repository-structure.md) | Four repositories, no staging environment |
 | [0005](0005-structured-logging.md) | Structured logs with a request id |
 | [0006](0006-user-ids-uuid.md) | User ids are UUIDs (clean break, clients re-register) |
+| [0007](0007-postgres-archive.md) | PostgreSQL holds accounts, devices and the ciphertext archive |

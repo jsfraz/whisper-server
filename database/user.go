@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"fmt"
 	"jsfraz/whisper-server/models"
 	"jsfraz/whisper-server/utils"
 	"strings"
@@ -19,7 +18,7 @@ import (
 //	@return error
 func UserExistsByUsername(username string) (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -35,7 +34,7 @@ func UserExistsByUsername(username string) (bool, error) {
 //	@param inviteCode
 //	@return error
 func InsertUser(user *models.User, inviteCode string) error {
-	tx := utils.GetSingleton().Sqlite.Begin()
+	tx := utils.GetSingleton().Db.Begin()
 	err := tx.Create(&user).Error
 	if err != nil {
 		tx.Rollback()
@@ -55,7 +54,7 @@ func InsertUser(user *models.User, inviteCode string) error {
 //	@return error
 func AdminExists() (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -69,7 +68,7 @@ func AdminExists() (bool, error) {
 //	@return error
 func UserExistsById(userId string) (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -88,9 +87,9 @@ func GetUserById(userId string) (*models.User, error) {
 	}
 	var user models.User
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Sqlite.Where("id = ? AND id NOT IN ?", userId, toDelete).First(&user).Error
+		err = utils.GetSingleton().Db.Where("id = ? AND id NOT IN ?", userId, toDelete).First(&user).Error
 	} else {
-		err = utils.GetSingleton().Sqlite.Where("id = ?", userId).First(&user).Error
+		err = utils.GetSingleton().Db.Where("id = ?", userId).First(&user).Error
 	}
 	if err != nil {
 		return nil, err
@@ -110,9 +109,9 @@ func GetAllUsersExceptUser(userId string) (*[]models.User, error) {
 	}
 	var users []models.User = []models.User{}
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Sqlite.Where("id != ? AND id NOT IN ?", userId, toDelete).Find(&users).Error
+		err = utils.GetSingleton().Db.Where("id != ? AND id NOT IN ?", userId, toDelete).Find(&users).Error
 	} else {
-		err = utils.GetSingleton().Sqlite.Where("id != ?", userId).Find(&users).Error
+		err = utils.GetSingleton().Db.Where("id != ?", userId).Find(&users).Error
 	}
 	if err != nil {
 		return nil, err
@@ -125,7 +124,7 @@ func GetAllUsersExceptUser(userId string) (*[]models.User, error) {
 //	@param userId
 //	@return error
 func DeleteUserById(userId string) error {
-	return utils.GetSingleton().Sqlite.Where("id = ?", userId).Delete(&models.User{}).Error
+	return utils.GetSingleton().Db.Where("id = ?", userId).Delete(&models.User{}).Error
 }
 
 // Checks if user with given ID is admin.
@@ -135,7 +134,7 @@ func DeleteUserById(userId string) error {
 //	@return error
 func IsAdmin(userId string) (bool, error) {
 	var isAdmin bool
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
 	if err != nil {
 		return false, err
 	}
@@ -149,7 +148,7 @@ func IsAdmin(userId string) (bool, error) {
 //	@return error
 func GetUserPublicKey(userId string) (string, error) {
 	var publicKey string
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +180,7 @@ func SearchUsersByUsername(username string, userId string) (*[]models.User, erro
 	}
 	var users []models.User
 
-	query := utils.GetSingleton().Sqlite.Model(&models.User{}).
+	query := utils.GetSingleton().Db.Model(&models.User{}).
 		Where("username LIKE ? ESCAPE '\\'", "%"+escapeLike(username)+"%")
 	if searchExcludesSelf() {
 		query = query.Where("id != ?", userId)
@@ -206,31 +205,11 @@ func PushUsersToDelete(ids []string) error {
 		return err
 	}
 	invalidateToDeleteCache()
-	// Delete messages for these users
+	// The archive goes with the account: the ciphertext is useless without a
+	// recipient, and keeping it would outlive the deletion.
 	for _, userId := range ids {
-		// Use SCAN to find keys matching pattern
-		pattern := fmt.Sprintf("msg:%s_*", userId)
-		keys := []string{}
-
-		// Scan for matching keys
-		iter := client.B().Scan().Cursor(0).Match(pattern).Count(100).Build()
-		for {
-			result, err := client.Do(context.Background(), iter).AsScanEntry()
-			if err != nil {
-				return err
-			}
-			keys = append(keys, result.Elements...)
-			if result.Cursor == 0 {
-				break
-			}
-			iter = client.B().Scan().Cursor(result.Cursor).Match(pattern).Count(100).Build()
-		}
-
-		// Delete found keys in batches
-		if len(keys) > 0 {
-			if err := client.Do(context.Background(), client.B().Del().Key(keys...).Build()).Error(); err != nil {
-				return err
-			}
+		if err := DeleteUserMessages(userId); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -313,4 +292,61 @@ func RemoveDeletedUserId(userId string) error {
 	err := client.Do(context.Background(), client.B().Srem().Key("del:users").Member(userId).Build()).Error()
 	invalidateToDeleteCache()
 	return err
+}
+
+// GetUserRetentionDays returns the archive retention of a user in days.
+//
+//	@param userId
+//	@return int
+//	@return error
+func GetUserRetentionDays(userId string) (int, error) {
+	var days int
+	err := utils.GetSingleton().Db.Model(&models.User{}).
+		Select("retention_days").Where("id = ?", userId).Scan(&days).Error
+	if err != nil {
+		return 0, err
+	}
+	if days == 0 {
+		days = models.DefaultRetentionDays
+	}
+	return days, nil
+}
+
+// SetUserRetentionDays stores the archive retention of a user.
+//
+//	@param userId
+//	@param days
+//	@return error
+func SetUserRetentionDays(userId string, days int) error {
+	return utils.GetSingleton().Db.Model(&models.User{}).
+		Where("id = ?", userId).Update("retention_days", days).Error
+}
+
+// GetRetentionDaysOf returns the retention both participants agreed to: the
+// shorter setting wins, because both accounts can read the message.
+//
+//	@param firstId
+//	@param secondId
+//	@return int
+//	@return error
+func GetRetentionDaysOf(firstId string, secondId string) (int, error) {
+	var rows []struct {
+		Id            string
+		RetentionDays int
+	}
+	err := utils.GetSingleton().Db.Model(&models.User{}).
+		Select("id, retention_days").Where("id IN ?", []string{firstId, secondId}).
+		Scan(&rows).Error
+	if err != nil {
+		return 0, err
+	}
+	days := map[string]int{}
+	for _, row := range rows {
+		value := row.RetentionDays
+		if value == 0 {
+			value = models.DefaultRetentionDays
+		}
+		days[row.Id] = value
+	}
+	return ShortestRetention(days[firstId], days[secondId]), nil
 }

@@ -33,6 +33,15 @@ const (
 	ErrorLoginChallengeUsed       = "loginChallengeUsed"
 	ErrorRefreshTokenNotRevocable = "refreshTokenNotRevocable"
 	ErrorRefreshSessionRevoked    = "refreshSessionRevoked"
+	ErrorClientVersionUnsupported = "clientVersionUnsupported"
+
+	ErrorDeviceRequired = "deviceRequired"
+	ErrorInvalidDevice  = "invalidDevice"
+	ErrorDeviceRevoked  = "deviceRevoked"
+	ErrorDeviceNotFound = "deviceNotFound"
+
+	ErrorInvalidRetention = "invalidRetention"
+	ErrorInvalidCursor    = "invalidCursor"
 
 	ErrorInviteDoesNotExist   = "inviteDoesNotExist"
 	ErrorInvalidEmailAddress  = "invalidEmailAddress"

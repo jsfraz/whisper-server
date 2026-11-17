@@ -20,8 +20,13 @@ type Config struct {
 	// Server URL
 	ServerUrl string `envconfig:"SERVER_URL" required:"true"`
 
-	// SQLite
-	SqlitePassword string `envconfig:"SQLITE_PASSWORD" required:"true"`
+	// PostgreSQL DSN (users, devices, ciphertext archive)
+	DatabaseUrl string `envconfig:"DATABASE_URL" required:"true"`
+
+	// Oldest client the server still accepts at login. A client that reports an
+	// older version is refused with clientVersionUnsupported instead of failing
+	// later in a way nobody can explain.
+	MinClientVersion string `envconfig:"MIN_CLIENT_VERSION" default:"0.1.0"`
 
 	// Valkey
 	ValkeyHost     string `envconfig:"VALKEY_HOST" required:"true"`
@@ -55,10 +60,8 @@ type Config struct {
 	WsAccessTokenSecret   string `envconfig:"WS_ACCESS_TOKEN_SECRET" required:"true"`
 	WsAccessTokenLifespan int    `envconfig:"WS_ACCESS_TOKEN_LIFESPAN" default:"10"` // Default 10 (10 seconds)
 
-	// Message TTL
-	MessageTtl int `envconfig:"MESSAGE_TTL" default:"2592000"` // Default 2592000 (30 days)
-
-	// Media TTL (should be >= MessageTtl so offline recipients can still fetch referenced media)
+	// Media TTL (kept at least as long as the archive retention so a device that
+	// was away can still fetch the media of its history)
 	MediaTtl int `envconfig:"MEDIA_TTL" default:"2592000"` // Default 2592000 (30 days)
 
 	// Maximum allowed upload size for a single media file in bytes
@@ -78,8 +81,7 @@ type Config struct {
 	TrustedProxies string `envconfig:"TRUSTED_PROXIES" default:"127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"`
 
 	// Stops one account from exhausting shared storage.
-	MediaMaxPerUser  int `envconfig:"MEDIA_MAX_PER_USER" default:"200"`
-	MessageMaxQueued int `envconfig:"MESSAGE_MAX_QUEUED" default:"500"`
+	MediaMaxPerUser int `envconfig:"MEDIA_MAX_PER_USER" default:"200"`
 
 	// WebSocket messages accepted from one connection per second.
 	WsMessageRate int `envconfig:"WS_MESSAGE_RATE" default:"20"`

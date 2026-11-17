@@ -1,6 +1,6 @@
 # whisper-server — agent contract
 
-Go 1.27 / Gin API for the Whisper messenger: SQLite+SQLCipher (GORM), Valkey, WebSocket, Firebase push.
+Go 1.27 / Gin API for the Whisper messenger: PostgreSQL (GORM), Valkey, WebSocket, Firebase push.
 Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `openapi.json`), `whisper_websocket_client_dart`.
 
 ## Commands
@@ -37,14 +37,15 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 - **Login flow:** `POST /api/auth` only accepts a JWT whose `nonce` claim is a
   live `GET /api/auth/challenge` value (spent on use). Adding or removing a claim
   there breaks every client; the E2E test "the login token is single use" locks it.
-- **Limits are part of the contract:** `MESSAGE_MAX_QUEUED`, `MEDIA_MAX_PER_USER`
-  and `WS_MESSAGE_RATE` are the only thing keeping one account from exhausting
+- **Limits are part of the contract:** `MEDIA_MAX_PER_USER` and
+  `WS_MESSAGE_RATE` are the only thing keeping one account from exhausting
   shared storage; do not raise them without a replacement.
 - **Client IP:** only `TRUSTED_PROXIES` may set `X-Forwarded-For`. Without that
   the per IP rate limit is bypassable, so never call `SetTrustedProxies(nil)`.
-- **Offline queue contract:** a `msg:*` entry is deleted by the receiver's `ack`,
-  never at send time. Changing that silently loses messages; the E2E test
-  "an unacknowledged message is delivered again on reconnect" locks it.
+- **Archive contract:** one ciphertext row per message is history, offline
+  buffer and delta source. A client resends the same `(sender, receiver, sentAt)`
+  and must keep one row; the E2E test "a resent message is archived once" locks
+  it. Delivery is a `sync` frame with the client's last `seq`, never a full dump.
 
 ## Definition of done
 

@@ -88,4 +88,71 @@ func UserRoute(g *fizz.RouterGroup) {
 			true),
 		tonic.Handler(handlers.DeleteMe, http.StatusNoContent),
 	)
+
+	// Devices of the account
+	grp.GET("devices",
+		utils.CreateOperationOption(
+			"Get devices",
+			"Lists the devices signed into the account. The requesting device is flagged.",
+			[]int{
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.GetDevices, http.StatusOK),
+	)
+
+	grp.POST("devices/:id/revoke",
+		utils.CreateOperationOption(
+			"Revoke a device",
+			"Locks a device out immediately: it cannot log in, renew its token, call the API or keep its WebSocket.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.RevokeDevice, http.StatusNoContent),
+	)
+
+	grp.POST("devices/:id/unrevoke",
+		utils.CreateOperationOption(
+			"Unrevoke a device",
+			"Lets a revoked device sign in again. Only a live device of the same account may do this.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.UnrevokeDevice, http.StatusNoContent),
+	)
+
+	// Archive retention
+	grp.GET("retention",
+		utils.CreateOperationOption(
+			"Get archive retention",
+			"Returns how long the server keeps the ciphertext archive of this account.",
+			[]int{
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.GetRetention, http.StatusOK),
+	)
+
+	grp.PUT("retention",
+		utils.CreateOperationOption(
+			"Set archive retention",
+			"The shorter retention of both participants wins, because both accounts can read a message.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.SetRetention, http.StatusOK),
+	)
 }

@@ -18,12 +18,12 @@ Standard backlog, not silently accepted.
 | Spoofing | A captured login JWT is replayed | The JWT must carry a server-issued `nonce` (`GET /api/auth/challenge`), spent with `GETDEL` on use | `e2e`: the login token is single use |
 | Spoofing | Stolen WS token is replayed | WS token is single-use: `GETDEL` in Valkey plus short TTL | `e2e`: WS handshake consumes the one-time token |
 | Tampering | Forged access token | HS256 signature with a server secret; `TokenValid` rejects other algorithms and requires the matching `typ` claim | `utils`: `token_test.go` |
-| Tampering | A client timestamps a message into the far future or onto an existing queue entry | `sentAt` must be within five minutes of the server clock | `e2e`: a message with an implausible timestamp is refused |
+| Tampering | A client timestamps a message into the far future or onto an existing archive row | `sentAt` must be within five minutes of the server clock | `e2e`: a message with an implausible timestamp is refused |
 | Tampering | Crafted claims crash the server | Type assertions in `TokenValid` are checked and return an error | `utils` unit tests + malformed-token path |
 | Repudiation | User denies sending a message | No server-side audit log of message metadata | **Missing** - by design, but worth an explicit decision |
 | Information disclosure | Server reads message content | Messages are AES-GCM encrypted on the device; the server stores ciphertext | `e2e`: online and offline message scenarios; app E2E message test |
 | Denial of service | Brute force login, invite or media endpoints | Per client IP token bucket on register, auth, challenge and upload (`RateLimit`); only the reverse proxy may set `X-Forwarded-For` | `middlewares`: `rate_limit_test.go` |
-| Denial of service | One account floods another user's queue | Per receiver queue counter with a hard cap (`MESSAGE_MAX_QUEUED`) | `e2e`: an offline queue has a per user cap |
+| Denial of service | One account floods another user's archive | One row per message, retention sweeper, per connection message rate | `e2e`: a resent message is archived once |
 | Denial of service | One account floods the WebSocket | Per connection message rate limiter, the connection is closed on abuse | `utils`: `message_rate_test.go` |
 | Denial of service | One account fills the disk with media | Per account pending media quota (`MEDIA_MAX_PER_USER`) | `e2e`: a user has a media quota |
 | Elevation of privilege | Non-admin creates invites | Admin flag checked server-side in invite handlers | not covered by E2E yet |

@@ -17,7 +17,7 @@ services:
   #   environment:
   #    - GIN_MODE=debug
   #    - SERVER_URL=${SERVER_URL}
-  #    - SQLITE_PASSWORD=${SQLITE_PASSWORD}
+  #    - DATABASE_URL=postgres://whisper:${POSTGRES_PASSWORD}@127.0.0.1:5432/whisper?sslmode=disable
   #    - VALKEY_HOST=whisper-valkey-dev
   #    - VALKEY_PASSWORD=${VALKEY_PASSWORD}
   #    - ADMIN_MAIL=${ADMIN_MAIL}
@@ -42,6 +42,27 @@ services:
       # Bind the single sysctl file; runc refuses a bind mount inside /proc.
       - /proc/sys/vm/overcommit_memory:/mnt/overcommit_memory
 
+  # Users, devices and the ciphertext archive. SQLite was only ever meant to
+  # hold accounts; history outgrew it.
+  whisper-postgres:
+    image: postgres:17-alpine
+    container_name: whisper-postgres-dev
+    environment:
+      - POSTGRES_DB=whisper
+      - POSTGRES_USER=whisper
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    # The server runs on the host during development (go run .), so the port is
+    # published on loopback only.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whisper -d whisper"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   whisper-valkey:
     image: valkey/valkey:9-alpine
     container_name: whisper-valkey-dev
@@ -56,3 +77,4 @@ services:
 
 volumes:
   valkey_data:
+  postgres_data:
