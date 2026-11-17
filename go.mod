@@ -3,7 +3,7 @@ module jsfraz/whisper-server
 go 1.27.4
 
 require (
-	firebase.google.com/go/v4 v4.22.0
+	firebase.google.com/go/v4 v4.23.0
 	github.com/ShaoQ1ang/gorm-sqlite-cipher v0.0.0-20250226022537-621ed547f915
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/aymerick/raymond v2.0.2+incompatible
