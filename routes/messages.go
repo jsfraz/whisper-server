@@ -30,4 +30,52 @@ func MessageRoute(g *fizz.RouterGroup) {
 			true),
 		tonic.Handler(handlers.GetHistory, http.StatusOK),
 	)
+
+	// Delete a whole conversation for the calling account only. The peer is a
+	// query parameter, not a path segment: gin refuses a wildcard next to the
+	// ":id" routes below.
+	grp.DELETE("",
+		utils.CreateOperationOption(
+			"Delete a conversation for me",
+			"Deletes a conversation for the calling account on every device: everything sent at or before the cut stops being visible to it. The other participant keeps the archive. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.ClearConversation, http.StatusOK),
+	)
+
+	// Delete one own message for everyone.
+	grp.DELETE(":id",
+		utils.CreateOperationOption(
+			"Delete my message for everyone",
+			"Erases the ciphertext of a message the caller sent and leaves a tombstone, so the other side learns about it on the next sync. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.DeleteMessage, http.StatusNoContent),
+	)
+
+	// Hide one message for the calling account only.
+	grp.POST(":id/hide",
+		utils.CreateOperationOption(
+			"Hide a message for me",
+			"Removes one message from the calling account on every device. The other participant keeps it. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.HideMessage, http.StatusNoContent),
+	)
 }

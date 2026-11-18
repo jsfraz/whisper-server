@@ -61,5 +61,15 @@ func GetHistory(c *gin.Context, request *models.HistoryQuery) (*models.HistoryPa
 		oldest := messages[len(messages)-1]
 		nextCursor = utils.EncodeCursor(oldest.SentAt, oldest.Id)
 	}
-	return &models.HistoryPage{Messages: wire, Peers: peerList, NextCursor: nextCursor}, nil
+	// The client drops whatever it still holds from before its own cut.
+	clearedAt, err := database.ConversationClearedAt(userId.(string), request.PeerId)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	return &models.HistoryPage{
+		Messages:   wire,
+		Peers:      peerList,
+		NextCursor: nextCursor,
+		ClearedAt:  clearedAt,
+	}, nil
 }

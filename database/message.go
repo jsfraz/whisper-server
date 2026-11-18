@@ -12,6 +12,15 @@ import (
 // messageColumns is the physical order a scanned message expects.
 const messageColumns = "id, seq, sender_id, receiver_id, content, wrapped_key, nonce, mac, sent_at, expires_at, deleted_at"
 
+// visibleTo keeps only the rows one account may still see: nothing covered by
+// its whole-chat cut and nothing hidden for it alone. It binds two arguments,
+// the viewer id twice, and expects the messages table to be in scope.
+const visibleTo = ` NOT EXISTS (SELECT 1 FROM conversation_hides h
+		WHERE h.user_id = ? AND h.conversation = messages.conversation
+		  AND messages.sent_at <= h.cleared_at)
+	AND NOT EXISTS (SELECT 1 FROM message_hides mh
+		WHERE mh.user_id = ? AND mh.message_id = messages.id)`
+
 // InsertMessage writes one ciphertext message to the archive and fills its id
 // and seq. A resend of the same message (same sender, receiver and timestamp)
 // keeps the original row instead of creating a second copy.
@@ -58,14 +67,15 @@ func InsertMessage(message *models.PrivateMessage, retentionDays int) error {
 //	@return error
 func HistoryForPeer(userId string, peerId string, before *utils.Cursor, limit int) ([]models.PrivateMessage, error) {
 	db := utils.GetSingleton().Db
-	args := []interface{}{models.ConversationKey(userId, peerId), time.Now(), limit}
+	args := []interface{}{models.ConversationKey(userId, peerId), time.Now(), userId, userId}
 	query := `SELECT ` + messageColumns + ` FROM messages
-		WHERE conversation = ? AND expires_at > ?`
+		WHERE conversation = ? AND expires_at > ? AND` + visibleTo
 	if before != nil {
 		query += ` AND (sent_at, id) < (?, ?)`
-		args = []interface{}{models.ConversationKey(userId, peerId), time.Now(), before.SentAt, before.Id, limit}
+		args = append(args, before.SentAt, before.Id)
 	}
 	query += ` ORDER BY sent_at DESC, id DESC LIMIT ?`
+	args = append(args, limit)
 	messages := []models.PrivateMessage{}
 	if err := db.Raw(query, args...).Scan(&messages).Error; err != nil {
 		return nil, err
@@ -83,8 +93,8 @@ func HistoryForPeer(userId string, peerId string, before *utils.Cursor, limit in
 func SyncSince(userId string, sinceSeq int64, limit int) ([]models.PrivateMessage, error) {
 	messages := []models.PrivateMessage{}
 	err := utils.GetSingleton().Db.Raw(`SELECT `+messageColumns+` FROM messages
-		WHERE (sender_id = ? OR receiver_id = ?) AND seq > ? AND expires_at > ?
-		ORDER BY seq LIMIT ?`, userId, userId, sinceSeq, time.Now(), limit).
+		WHERE (sender_id = ? OR receiver_id = ?) AND seq > ? AND expires_at > ? AND`+visibleTo+`
+		ORDER BY seq LIMIT ?`, userId, userId, sinceSeq, time.Now(), userId, userId, limit).
 		Scan(&messages).Error
 	if err != nil {
 		return nil, err

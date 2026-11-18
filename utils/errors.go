@@ -52,6 +52,7 @@ const (
 	ErrorInvalidMediaId           = "invalidMediaId"
 	ErrorTooManyPendingMediaFiles = "tooManyPendingMediaFiles"
 
+	ErrorMessageNotFound        = "messageNotFound"
 	ErrorCannotSendToSelf       = "cannotSendToSelf"
 	ErrorCannotSendToUser       = "cannotSendToUser"
 	ErrorReceiverQueueFull      = "receiverQueueFull"

@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // HistoryQuery is one page of a conversation, newest first.
 //
 //	@param peerId
@@ -12,8 +14,11 @@ type HistoryQuery struct {
 }
 
 // HistoryPage is one page of the ciphertext archive plus the peers it mentions.
+// ClearedAt is this account's whole-chat cut: everything before it was deleted
+// for this account only, so a device can drop what it still holds locally.
 type HistoryPage struct {
 	Messages   []PrivateMessage `json:"messages" validate:"required"`
 	Peers      []User           `json:"peers" validate:"required"`
 	NextCursor string           `json:"nextCursor"`
+	ClearedAt  *time.Time       `json:"clearedAt"`
 }
