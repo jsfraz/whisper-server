@@ -22,7 +22,10 @@ import (
 //	@return error
 func ClearConversation(c *gin.Context, request *models.ClearConversationQuery) (*models.ClearConversationResponse, error) {
 	userId, _ := c.Get("userId")
-	if request.PeerId == userId.(string) {
+	// The self-chat only exists in debug, where clearing it is allowed; a
+	// release server has no such conversation to clear.
+	if request.PeerId == userId.(string) &&
+		utils.GetSingleton().Config.GinMode == "release" {
 		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToSelf))
 	}
 	before := time.Now().UTC()
