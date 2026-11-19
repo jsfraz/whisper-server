@@ -74,15 +74,3 @@ func MessageParticipants(messageId string) (string, string, bool, error) {
 	}
 	return senderId, receiverId, true, nil
 }
-
-// TombstoneMessage drops the ciphertext of an own message for everyone. The row
-// keeps its slot so the other side learns the message is gone on the next sync.
-// Idempotent: a second call leaves the first instant in place.
-//
-//	@param messageId
-//	@return error
-func TombstoneMessage(messageId string) error {
-	return utils.GetSingleton().Db.Exec(`UPDATE messages
-		SET content = NULL, wrapped_key = NULL, nonce = NULL, mac = NULL, deleted_at = COALESCE(deleted_at, ?)
-		WHERE id = ?`, time.Now().UTC(), messageId).Error
-}

@@ -10,7 +10,7 @@ import (
 )
 
 // messageColumns is the physical order a scanned message expects.
-const messageColumns = "id, seq, sender_id, receiver_id, content, wrapped_key, nonce, mac, sent_at, expires_at, deleted_at"
+const messageColumns = "id, seq, sender_id, receiver_id, content, wrapped_key, nonce, mac, sent_at, expires_at, deleted_at, edited_at"
 
 // visibleTo keeps only the rows one account may still see: nothing covered by
 // its whole-chat cut and nothing hidden for it alone. It binds two arguments,
