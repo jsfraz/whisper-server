@@ -68,28 +68,34 @@ func HideMessage(c *gin.Context, request *models.MessageIdPath) error {
 	return nil
 }
 
-// DeleteMessage drops an own message for everyone: the ciphertext is erased and
-// the row keeps a tombstone, so the other side learns about it on the next sync.
-// A message the caller did not send cannot be deleted for the other side.
+// DeleteMessage drops an own message for everyone: the ciphertext is erased, the
+// pin goes with it and an entry in the mutation log lets both sides learn about
+// it. A message the caller did not send cannot be deleted for the other side.
+// Deleting twice, or deleting a message retention already swept away, is a
+// no-op that still answers 204 so a retry cannot fail.
 //
 //	@param c
 //	@param request
 //	@return error
 func DeleteMessage(c *gin.Context, request *models.MessageIdPath) error {
 	userId, _ := c.Get("userId")
-	messageId := request.Id
-	senderId, _, found, err := database.MessageParticipants(messageId)
+	row, found, err := database.GetMessageRow(request.Id)
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !found {
-		return c.AbortWithError(http.StatusNotFound, errors.New(utils.ErrorMessageNotFound))
+		return nil
 	}
-	if senderId != userId.(string) {
+	if row.SenderId != userId.(string) {
 		return c.AbortWithError(http.StatusForbidden, errors.New(utils.ErrorNotAuthorized))
 	}
-	if err := database.TombstoneMessage(messageId); err != nil {
+	if row.DeletedAt != nil {
+		return nil
+	}
+	event, err := database.DeleteMessageForEveryone(row, time.Now().UTC())
+	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
+	broadcastEvent(event)
 	return nil
 }

@@ -170,11 +170,41 @@ func processSync(conn *utils.WSConnection, payload json.RawMessage) {
 	for _, peer := range peers {
 		peerList = append(peerList, peer)
 	}
+	// Mutations are replayed only after the device holds the messages they talk
+	// about, so an event cursor never outruns the archive page.
+	events := []models.MessageEvent{}
+	eventsThrough := int64(0)
+	hasMore := len(messages) == syncPageSize
+	if request.SinceEventSeq != nil {
+		missed, err := database.EventsSince(conn.UserId, *request.SinceEventSeq, syncedThrough, syncPageSize)
+		if err != nil {
+			conn.SendError(err)
+			return
+		}
+		eventsThrough = *request.SinceEventSeq
+		for _, event := range missed {
+			events = append(events, event.ToWire(conn.UserId))
+			if event.EventSeq > eventsThrough {
+				eventsThrough = event.EventSeq
+			}
+		}
+		if len(missed) == syncPageSize {
+			hasMore = true
+		}
+	}
+	cleared, err := database.ClearedFor(conn.UserId)
+	if err != nil {
+		conn.SendError(err)
+		return
+	}
 	conn.Send(models.NewWsResponse(models.WsResponseTypeSynced, models.WsSynced{
 		Messages:      wire,
 		Peers:         peerList,
+		Events:        events,
+		Cleared:       cleared,
 		SyncedThrough: syncedThrough,
-		HasMore:       len(messages) == syncPageSize,
+		EventsThrough: eventsThrough,
+		HasMore:       hasMore,
 	}))
 }
 

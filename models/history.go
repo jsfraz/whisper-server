@@ -19,6 +19,7 @@ type HistoryQuery struct {
 type HistoryPage struct {
 	Messages   []PrivateMessage `json:"messages" validate:"required"`
 	Peers      []User           `json:"peers" validate:"required"`
+	Pins       []PinnedMessage  `json:"pins" validate:"required"`
 	NextCursor string           `json:"nextCursor"`
 	ClearedAt  *time.Time       `json:"clearedAt"`
 }

@@ -673,6 +673,254 @@ func TestE2E(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("an edited message reaches the peer and the log", func(t *testing.T) {
+		sender := e.register(t, "editsender")
+		receiver := e.register(t, "editreceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+
+		e.sendMessage(t, senderConn, receiver.Id, `"before"`)
+		ack := e.readAck(t, senderConn)
+		e.readMessage(t, receiverConn)
+
+		edit := map[string]json.RawMessage{
+			"content": json.RawMessage(`"after"`),
+			"key":     json.RawMessage(`"k2"`),
+			"nonce":   json.RawMessage(`"n2"`),
+			"mac":     json.RawMessage(`"m2"`),
+		}
+		var edited models.EditMessageResponse
+		if status := e.doJSON(t, http.MethodPatch, "/api/messages/"+ack.Id, edit, senderTokens.AccessToken, &edited); status != http.StatusOK {
+			t.Fatalf("edit status: %d", status)
+		}
+		if edited.EditedAt.IsZero() {
+			t.Fatal("edit did not answer with an instant")
+		}
+		event := e.readEvent(t, receiverConn, models.WsResponseTypeEdit)
+		if event.Kind != models.MessageEventEdit || event.MessageId != ack.Id {
+			t.Fatalf("unexpected edit event: %+v", event)
+		}
+		if string(event.Content) != `"after"` || event.PeerId != sender.Id || event.V != 1 {
+			t.Fatalf("unexpected edit payload: %+v", event)
+		}
+
+		// Only the sender may rewrite a message.
+		if status := e.doJSON(t, http.MethodPatch, "/api/messages/"+ack.Id, edit, receiverTokens.AccessToken, nil); status != http.StatusForbidden {
+			t.Fatalf("peer edit status: %d", status)
+		}
+
+		var page models.HistoryPage
+		if status := e.doJSON(t, http.MethodGet, "/api/messages?peerId="+sender.Id, nil, receiverTokens.AccessToken, &page); status != http.StatusOK {
+			t.Fatalf("history status: %d", status)
+		}
+		if len(page.Messages) != 1 || string(page.Messages[0].Content) != `"after"` || page.Messages[0].EditedAt == nil {
+			t.Fatalf("history kept the old version: %+v", page.Messages)
+		}
+	})
+
+	t.Run("delete for everyone is idempotent and reaches the peer", func(t *testing.T) {
+		sender := e.register(t, "deletesender")
+		receiver := e.register(t, "deletereceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+
+		e.sendMessage(t, senderConn, receiver.Id, `"gone"`)
+		ack := e.readAck(t, senderConn)
+		e.readMessage(t, receiverConn)
+
+		for i := 0; i < 2; i++ {
+			if status := e.doJSON(t, http.MethodDelete, "/api/messages/"+ack.Id, nil, senderTokens.AccessToken, nil); status != http.StatusNoContent {
+				t.Fatalf("delete %d status: %d", i, status)
+			}
+		}
+		event := e.readEvent(t, receiverConn, models.WsResponseTypeDelete)
+		if event.Kind != models.MessageEventDelete || event.MessageId != ack.Id {
+			t.Fatalf("unexpected delete event: %+v", event)
+		}
+
+		// The peer cannot delete somebody else's message, and a message retention
+		// already swept away is a no-op rather than a failure.
+		if status := e.doJSON(t, http.MethodDelete, "/api/messages/"+ack.Id, nil, receiverTokens.AccessToken, nil); status != http.StatusForbidden {
+			t.Fatalf("peer delete status: %d", status)
+		}
+		if status := e.doJSON(t, http.MethodDelete, "/api/messages/"+uuid.NewString(), nil, senderTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("unknown message delete status: %d", status)
+		}
+
+		// The duplicate delete must not append a second log entry.
+		receiverConn2 := e.dialWS(t, e.wsToken(t, e.authenticate(t, receiver).AccessToken))
+		defer func() { _ = receiverConn2.Close() }()
+		synced := e.syncEvents(t, receiverConn2, 0, 0)
+		if len(synced.Events) != 1 || synced.Events[0].Kind != models.MessageEventDelete {
+			t.Fatalf("event log holds %+v", synced.Events)
+		}
+		if len(synced.Messages) != 1 || synced.Messages[0].DeletedAt == nil || string(synced.Messages[0].Content) != "null" {
+			t.Fatalf("tombstone missing from the delta: %+v", synced.Messages)
+		}
+	})
+
+	t.Run("a reaction can be replaced and removed", func(t *testing.T) {
+		sender := e.register(t, "reactsender")
+		receiver := e.register(t, "reactreceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+
+		e.sendMessage(t, senderConn, receiver.Id, `"react to me"`)
+		ack := e.readAck(t, senderConn)
+		e.readMessage(t, receiverConn)
+
+		// The receiver reacts, so the sender's socket carries the frame.
+		reaction := map[string]json.RawMessage{
+			"content": json.RawMessage(`"👍"`),
+			"key":     json.RawMessage(`"k"`),
+			"nonce":   json.RawMessage(`"n"`),
+			"mac":     json.RawMessage(`"m"`),
+		}
+		if status := e.doJSON(t, http.MethodPut, "/api/messages/"+ack.Id+"/reaction", reaction, receiverTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("reaction status: %d", status)
+		}
+		event := e.readEvent(t, senderConn, models.WsResponseTypeReaction)
+		if event.ActorId != receiver.Id || string(event.Content) != `"👍"` {
+			t.Fatalf("unexpected reaction event: %+v", event)
+		}
+
+		// Removing it is a reaction event with no ciphertext.
+		if status := e.doJSON(t, http.MethodDelete, "/api/messages/"+ack.Id+"/reaction", nil, receiverTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("reaction removal status: %d", status)
+		}
+		removed := e.readEvent(t, senderConn, models.WsResponseTypeReaction)
+		if string(removed.Content) != "null" || removed.ActorId != receiver.Id {
+			t.Fatalf("unexpected reaction removal: %+v", removed)
+		}
+
+		// An outsider has no message to react to.
+		outsider := e.register(t, "reactoutsider")
+		outsiderTokens := e.authenticate(t, outsider)
+		if status := e.doJSON(t, http.MethodPut, "/api/messages/"+ack.Id+"/reaction", reaction, outsiderTokens.AccessToken, nil); status != http.StatusForbidden {
+			t.Fatalf("outsider reaction status: %d", status)
+		}
+	})
+
+	t.Run("a pin is shared and can be removed", func(t *testing.T) {
+		sender := e.register(t, "pinsender")
+		receiver := e.register(t, "pinreceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+
+		e.sendMessage(t, senderConn, receiver.Id, `"pin me"`)
+		ack := e.readAck(t, senderConn)
+		e.readMessage(t, receiverConn)
+
+		if status := e.doJSON(t, http.MethodPut, "/api/messages/"+ack.Id+"/pin", nil, receiverTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("pin status: %d", status)
+		}
+		event := e.readEvent(t, receiverConn, models.WsResponseTypePin)
+		if event.Pinned == nil || !*event.Pinned || event.MessageId != ack.Id {
+			t.Fatalf("unexpected pin event: %+v", event)
+		}
+
+		// The pin is shared: the other participant sees it in the page too.
+		var page models.HistoryPage
+		if status := e.doJSON(t, http.MethodGet, "/api/messages?peerId="+receiver.Id, nil, senderTokens.AccessToken, &page); status != http.StatusOK {
+			t.Fatalf("history status: %d", status)
+		}
+		if len(page.Pins) != 1 || page.Pins[0].MessageId != ack.Id || page.Pins[0].PinnedBy != receiver.Id {
+			t.Fatalf("pins = %+v", page.Pins)
+		}
+
+		if status := e.doJSON(t, http.MethodDelete, "/api/messages/"+ack.Id+"/pin", nil, senderTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("unpin status: %d", status)
+		}
+		unpinned := e.readEvent(t, receiverConn, models.WsResponseTypePin)
+		if unpinned.Pinned == nil || *unpinned.Pinned {
+			t.Fatalf("unexpected unpin event: %+v", unpinned)
+		}
+		var after models.HistoryPage
+		if status := e.doJSON(t, http.MethodGet, "/api/messages?peerId="+receiver.Id, nil, senderTokens.AccessToken, &after); status != http.StatusOK {
+			t.Fatalf("history status: %d", status)
+		}
+		if len(after.Pins) != 0 {
+			t.Fatalf("pins survived the unpin: %+v", after.Pins)
+		}
+	})
+
+	t.Run("sync replays the lifecycle log and cleared chats", func(t *testing.T) {
+		sender := e.register(t, "syncsender")
+		receiver := e.register(t, "syncreceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+
+		e.sendMessage(t, senderConn, receiver.Id, `"lifecycle"`)
+		ack := e.readAck(t, senderConn)
+
+		if status := e.doJSON(t, http.MethodPut, "/api/messages/"+ack.Id+"/pin", nil, senderTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("pin status: %d", status)
+		}
+		if status := e.doJSON(t, http.MethodPatch, "/api/messages/"+ack.Id,
+			map[string]string{"content": `"edited"`, "key": "k", "nonce": "n", "mac": "m"},
+			senderTokens.AccessToken, nil); status != http.StatusOK {
+			t.Fatalf("edit status: %d", status)
+		}
+
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+		synced := e.syncEvents(t, receiverConn, 0, 0)
+		if len(synced.Events) != 2 {
+			t.Fatalf("synced %d events, want 2: %+v", len(synced.Events), synced.Events)
+		}
+		if synced.Events[0].Kind != models.MessageEventPin || synced.Events[1].Kind != models.MessageEventEdit {
+			t.Fatalf("unexpected event order: %+v", synced.Events)
+		}
+		if synced.EventsThrough == 0 || synced.EventsThrough != synced.Events[1].EventSeq {
+			t.Fatalf("events cursor = %d", synced.EventsThrough)
+		}
+
+		// A second sync at the cursor replays nothing.
+		again := e.syncEvents(t, receiverConn, synced.SyncedThrough, synced.EventsThrough)
+		if len(again.Events) != 0 {
+			t.Fatalf("cursor replayed %d events", len(again.Events))
+		}
+
+		// Clearing the chat is replayed to the devices that missed it. Only the
+		// account that cleared loses the chat, so a second sender device sees it.
+		if status := e.doJSON(t, http.MethodDelete, "/api/messages?peerId="+receiver.Id, nil, senderTokens.AccessToken, nil); status != http.StatusOK {
+			t.Fatalf("clear status: %d", status)
+		}
+		senderConn2 := e.dialWS(t, e.wsToken(t, e.authenticate(t, sender).AccessToken))
+		defer func() { _ = senderConn2.Close() }()
+		cleared := e.syncEvents(t, senderConn2, 0, 0)
+		if len(cleared.Cleared) != 1 || cleared.Cleared[0].PeerId != receiver.Id {
+			t.Fatalf("cleared = %+v", cleared.Cleared)
+		}
+		if len(cleared.Messages) != 0 {
+			t.Fatalf("a cleared chat still synced %d messages", len(cleared.Messages))
+		}
+	})
+
 }
 
 func startEnv(t *testing.T) *env {
@@ -924,7 +1172,18 @@ func (e *env) sendMessage(t *testing.T, conn *websocket.Conn, receiverID string,
 // sync asks the server for the delta above [sinceSeq].
 func (e *env) sync(t *testing.T, conn *websocket.Conn, sinceSeq int64) models.WsSynced {
 	t.Helper()
-	payload, err := json.Marshal(models.WsSyncRequest{SinceSeq: sinceSeq})
+	return e.syncRequest(t, conn, models.WsSyncRequest{SinceSeq: sinceSeq})
+}
+
+// syncEvents asks for the delta of messages and of lifecycle events in one go.
+func (e *env) syncEvents(t *testing.T, conn *websocket.Conn, sinceSeq int64, sinceEventSeq int64) models.WsSynced {
+	t.Helper()
+	return e.syncRequest(t, conn, models.WsSyncRequest{SinceSeq: sinceSeq, SinceEventSeq: &sinceEventSeq})
+}
+
+func (e *env) syncRequest(t *testing.T, conn *websocket.Conn, request models.WsSyncRequest) models.WsSynced {
+	t.Helper()
+	payload, err := json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1043,6 +1302,34 @@ func (e *env) readMessage(t *testing.T, conn *websocket.Conn) models.PrivateMess
 		t.Fatalf("unexpected ws response: %s (%d messages)", response.Type, len(response.Payload))
 	}
 	return response.Payload[0]
+}
+
+// readEvent waits for one mutation frame of the given type, skipping everything
+// else the socket may carry.
+func (e *env) readEvent(t *testing.T, conn *websocket.Conn, want models.WsResponseType) models.MessageEvent {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_ = conn.SetReadDeadline(deadline)
+		var response struct {
+			Type    string              `json:"type"`
+			Payload models.MessageEvent `json:"payload"`
+		}
+		messageType, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read ws %s frame: %v", want, err)
+		}
+		if messageType != websocket.BinaryMessage {
+			t.Fatalf("unexpected ws message type: %d", messageType)
+		}
+		if err := json.Unmarshal(data, &response); err != nil {
+			t.Fatalf("decode ws %s frame: %v", want, err)
+		}
+		if response.Type != string(want) {
+			continue
+		}
+		return response.Payload
+	}
 }
 
 func (e *env) uploadMedia(t *testing.T, accessToken string, receiverID string, ciphertext []byte) string {

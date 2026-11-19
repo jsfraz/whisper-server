@@ -36,6 +36,7 @@ type PrivateMessage struct {
 	SentAt          time.Time       `json:"sentAt" validate:"required"`
 	ExpiresAt       time.Time       `json:"-"`
 	DeletedAt       *time.Time      `json:"deletedAt"`
+	EditedAt        *time.Time      `json:"editedAt"`
 	RecipientOnline bool            `json:"recipientOnline" validate:"required" gorm:"-"`
 }
 

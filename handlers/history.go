@@ -66,9 +66,16 @@ func GetHistory(c *gin.Context, request *models.HistoryQuery) (*models.HistoryPa
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
+	// Pins are shared, so every participant sees the same list; a new device
+	// gets them without a separate round trip.
+	pins, err := database.PinsForPeer(userId.(string), request.PeerId)
+	if err != nil {
+		return nil, c.AbortWithError(http.StatusInternalServerError, err)
+	}
 	return &models.HistoryPage{
 		Messages:   wire,
 		Peers:      peerList,
+		Pins:       pins,
 		NextCursor: nextCursor,
 		ClearedAt:  clearedAt,
 	}, nil

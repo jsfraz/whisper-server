@@ -51,7 +51,22 @@ func MessageRoute(g *fizz.RouterGroup) {
 	grp.DELETE(":id",
 		utils.CreateOperationOption(
 			"Delete my message for everyone",
-			"Erases the ciphertext of a message the caller sent and leaves a tombstone, so the other side learns about it on the next sync. Idempotent.",
+			"Erases the ciphertext of a message the caller sent, unpins it and logs the tombstone, so both sides learn about it. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.DeleteMessage, http.StatusNoContent),
+	)
+
+	// Replace the ciphertext of one own message.
+	grp.PATCH(":id",
+		utils.CreateOperationOption(
+			"Edit my message",
+			"Replaces the ciphertext of a message the caller sent with a new version and stamps the edit. Both sides learn about it through sync and a live edit frame. The server never sees the plaintext.",
 			[]int{
 				http.StatusBadRequest,
 				http.StatusUnauthorized,
@@ -60,7 +75,71 @@ func MessageRoute(g *fizz.RouterGroup) {
 				http.StatusInternalServerError,
 			},
 			true),
-		tonic.Handler(handlers.DeleteMessage, http.StatusNoContent),
+		tonic.Handler(handlers.EditMessage, http.StatusOK),
+	)
+
+	// Set the caller's reaction on a message.
+	grp.PUT(":id/reaction",
+		utils.CreateOperationOption(
+			"React to a message",
+			"Stores the caller's encrypted reaction on a message. A later reaction replaces it; both sides learn about it through sync and a live reaction frame.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.SetReaction, http.StatusNoContent),
+	)
+
+	// Clear the caller's reaction on a message.
+	grp.DELETE(":id/reaction",
+		utils.CreateOperationOption(
+			"Remove my reaction",
+			"Clears the caller's reaction on a message. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.RemoveReaction, http.StatusNoContent),
+	)
+
+	// Pin a message for both participants.
+	grp.PUT(":id/pin",
+		utils.CreateOperationOption(
+			"Pin a message",
+			"Pins a message of the chat for both participants. Anyone in the conversation may pin. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.PinMessage, http.StatusNoContent),
+	)
+
+	// Remove a pin for both participants.
+	grp.DELETE(":id/pin",
+		utils.CreateOperationOption(
+			"Unpin a message",
+			"Removes a pin for both participants. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.UnpinMessage, http.StatusNoContent),
 	)
 
 	// Hide one message for the calling account only.
