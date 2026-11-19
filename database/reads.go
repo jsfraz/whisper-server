@@ -16,9 +16,13 @@ import (
 //	@return time.Time the cursor now in force
 //	@return error
 func SetReadCursor(userId string, peerId string, readAt time.Time) (time.Time, error) {
-	now := time.Now().UTC()
-	if readAt.After(now) {
-		readAt = now
+	// A message is stamped with the sender's clock, accepted within
+	// MaxSentAtSkew. Clamping the cursor to now would leave a message from a
+	// clock that runs a little ahead permanently unread, so the same skew is
+	// allowed here.
+	limit := time.Now().UTC().Add(models.MaxSentAtSkew)
+	if readAt.After(limit) {
+		readAt = limit
 	}
 	var stored time.Time
 	err := utils.GetSingleton().Db.Raw(`INSERT INTO conversation_reads

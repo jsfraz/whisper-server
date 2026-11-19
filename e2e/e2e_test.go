@@ -915,14 +915,37 @@ func TestE2E(t *testing.T) {
 			t.Fatalf("stale read cursor status: %d", status)
 		}
 
+		// A message carries the sender's clock, so a cursor a little ahead of
+		// the server clock must survive: otherwise that message never reads as
+		// read. Beyond the accepted skew it is clamped.
+		ahead := time.Now().UTC().Add(4 * time.Minute)
+		if status := e.doJSON(t, http.MethodPut, "/api/chats/"+peer.Id+"/read",
+			map[string]string{"readAt": ahead.Format(time.RFC3339Nano)},
+			readerTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("future read cursor status: %d", status)
+		}
+		farAhead := time.Now().UTC().Add(30 * time.Minute)
+		if status := e.doJSON(t, http.MethodPut, "/api/chats/"+peer.Id+"/read",
+			map[string]string{"readAt": farAhead.Format(time.RFC3339Nano)},
+			readerTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("far read cursor status: %d", status)
+		}
+
 		peerConn2 := e.dialWS(t, e.wsToken(t, e.authenticate(t, peer).AccessToken))
 		defer func() { _ = peerConn2.Close() }()
 		synced := e.sync(t, peerConn2, 0)
 		if len(synced.Reads) != 1 || synced.Reads[0].PeerId != reader.Id {
 			t.Fatalf("reads = %+v", synced.Reads)
 		}
-		if !synced.Reads[0].ReadAt.Equal(receipt.ReadAt) {
-			t.Fatalf("cursor moved backwards: %s -> %s", receipt.ReadAt, synced.Reads[0].ReadAt)
+		limit := time.Now().UTC().Add(models.MaxSentAtSkew)
+		if synced.Reads[0].ReadAt.After(limit.Add(time.Second)) {
+			t.Fatalf("cursor not clamped to the accepted skew: %s", synced.Reads[0].ReadAt)
+		}
+		if synced.Reads[0].ReadAt.Before(ahead.Add(-time.Second)) {
+			t.Fatalf("cursor dropped below the sender's clock: %s", synced.Reads[0].ReadAt)
+		}
+		if !synced.Reads[0].ReadAt.After(receipt.ReadAt) {
+			t.Fatalf("cursor did not move forward: %s -> %s", receipt.ReadAt, synced.Reads[0].ReadAt)
 		}
 	})
 
