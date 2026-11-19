@@ -123,6 +123,7 @@ func NewRouter() (*fizz.Fizz, error) {
 	AuthRoute(grp)
 	UserRoute(grp)
 	MessageRoute(grp)
+	ChatsRoute(grp)
 	InviteRoute(grp)
 	WsAuthRoute(grp)
 	FirebaseRoute(grp)

@@ -197,11 +197,17 @@ func processSync(conn *utils.WSConnection, payload json.RawMessage) {
 		conn.SendError(err)
 		return
 	}
+	reads, err := database.ReadCursorsFor(conn.UserId)
+	if err != nil {
+		conn.SendError(err)
+		return
+	}
 	conn.Send(models.NewWsResponse(models.WsResponseTypeSynced, models.WsSynced{
 		Messages:      wire,
 		Peers:         peerList,
 		Events:        events,
 		Cleared:       cleared,
+		Reads:         reads,
 		SyncedThrough: syncedThrough,
 		EventsThrough: eventsThrough,
 		HasMore:       hasMore,

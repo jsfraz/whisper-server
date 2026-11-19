@@ -865,6 +865,67 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("a read cursor reaches the peer and the sync", func(t *testing.T) {
+		reader := e.register(t, "readreader")
+		peer := e.register(t, "readpeer")
+		readerTokens := e.authenticate(t, reader)
+		peerTokens := e.authenticate(t, peer)
+
+		peerConn := e.dialWS(t, e.wsToken(t, peerTokens.AccessToken))
+		defer func() { _ = peerConn.Close() }()
+
+		readAt := time.Now().UTC()
+		if status := e.doJSON(t, http.MethodPut, "/api/chats/"+peer.Id+"/read",
+			map[string]string{"readAt": readAt.Format(time.RFC3339Nano)},
+			readerTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("read cursor status: %d", status)
+		}
+
+		var receipt models.ReadReceipt
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			_ = peerConn.SetReadDeadline(deadline)
+			var response struct {
+				Type    string             `json:"type"`
+				Payload models.ReadReceipt `json:"payload"`
+			}
+			messageType, data, err := peerConn.ReadMessage()
+			if err != nil {
+				t.Fatalf("read ws read frame: %v", err)
+			}
+			if messageType != websocket.BinaryMessage {
+				t.Fatalf("unexpected ws message type: %d", messageType)
+			}
+			if err := json.Unmarshal(data, &response); err != nil {
+				t.Fatalf("decode read frame: %v", err)
+			}
+			if response.Type == string(models.WsResponseTypeRead) {
+				receipt = response.Payload
+				break
+			}
+		}
+		if receipt.PeerId != reader.Id || receipt.V != 1 {
+			t.Fatalf("unexpected read frame: %+v", receipt)
+		}
+
+		// The cursor never moves backwards, so an older instant is ignored.
+		if status := e.doJSON(t, http.MethodPut, "/api/chats/"+peer.Id+"/read",
+			map[string]string{"readAt": readAt.Add(-time.Hour).Format(time.RFC3339Nano)},
+			readerTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("stale read cursor status: %d", status)
+		}
+
+		peerConn2 := e.dialWS(t, e.wsToken(t, e.authenticate(t, peer).AccessToken))
+		defer func() { _ = peerConn2.Close() }()
+		synced := e.sync(t, peerConn2, 0)
+		if len(synced.Reads) != 1 || synced.Reads[0].PeerId != reader.Id {
+			t.Fatalf("reads = %+v", synced.Reads)
+		}
+		if !synced.Reads[0].ReadAt.Equal(receipt.ReadAt) {
+			t.Fatalf("cursor moved backwards: %s -> %s", receipt.ReadAt, synced.Reads[0].ReadAt)
+		}
+	})
+
 	t.Run("sync replays the lifecycle log and cleared chats", func(t *testing.T) {
 		sender := e.register(t, "syncsender")
 		receiver := e.register(t, "syncreceiver")

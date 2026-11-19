@@ -12,6 +12,7 @@ const (
 	WsResponseTypeDelete        WsResponseType = "delete"
 	WsResponseTypeReaction      WsResponseType = "reaction"
 	WsResponseTypePin           WsResponseType = "pin"
+	WsResponseTypeRead          WsResponseType = "read"
 )
 
 // ResponseTypeForKind maps a mutation log kind to the frame that carries it.

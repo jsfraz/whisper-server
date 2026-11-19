@@ -20,6 +20,7 @@ type WsSynced struct {
 	Peers         []User                `json:"peers" validate:"required"`
 	Events        []MessageEvent        `json:"events" validate:"required"`
 	Cleared       []ConversationCleared `json:"cleared" validate:"required"`
+	Reads         []ReadReceipt         `json:"reads" validate:"required"`
 	SyncedThrough int64                 `json:"syncedThrough" validate:"required"`
 	EventsThrough int64                 `json:"eventsThrough" validate:"required"`
 	HasMore       bool                  `json:"hasMore" validate:"required"`
