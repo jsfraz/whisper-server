@@ -269,7 +269,8 @@ func ClearedFor(userId string) ([]models.ConversationCleared, error) {
 func PinsForPeer(userId string, peerId string) ([]models.PinnedMessage, error) {
 	pins := []models.PinnedMessage{}
 	err := utils.GetSingleton().Db.Raw(`SELECT id AS message_id, pinned_by, pinned_at FROM messages
-		WHERE conversation = ? AND pinned_at IS NOT NULL AND expires_at > ? AND deleted_at IS NULL AND`+visibleTo+`
+		WHERE conversation = ? AND pinned_at IS NOT NULL AND pinned_by IS NOT NULL
+		  AND expires_at > ? AND deleted_at IS NULL AND`+visibleTo+`
 		ORDER BY pinned_at DESC`,
 		models.ConversationKey(userId, peerId), time.Now(), userId, userId).Scan(&pins).Error
 	if err != nil {
