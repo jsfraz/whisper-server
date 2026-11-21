@@ -34,7 +34,7 @@ func InsertMessage(message *models.PrivateMessage, retentionDays int) error {
 		message.Id = uuid.NewString()
 	}
 	message.Conversation = models.ConversationKey(message.SenderId, message.ReceiverId)
-	message.ExpiresAt = message.SentAt.AddDate(0, 0, retentionDays)
+	message.ExpiresAt = models.EffectiveExpiry(message.SentAt, retentionDays, message.TTLSeconds)
 	var seq int64
 	err := db.Raw(`INSERT INTO messages
 		(id, conversation, sender_id, receiver_id, content, wrapped_key, nonce, mac, sent_at, expires_at)
@@ -190,6 +190,22 @@ func ConversationsOf(messages []models.PrivateMessage, viewerId string) []string
 		}
 	}
 	return peers
+}
+
+// HasConversation reports whether two accounts ever exchanged a message. The
+// ephemeral relay frames use it so neither can be pointed at an arbitrary
+// account; the server holds no conversation row to ask instead.
+//
+//	@param userId
+//	@param peerId
+//	@return bool
+//	@return error
+func HasConversation(userId string, peerId string) (bool, error) {
+	var exists bool
+	err := utils.GetSingleton().Db.Raw(
+		`SELECT EXISTS (SELECT 1 FROM messages WHERE conversation = ?)`,
+		models.ConversationKey(userId, peerId)).Scan(&exists).Error
+	return exists, err
 }
 
 // RunMessageSweeper deletes messages past their retention. It runs in batches

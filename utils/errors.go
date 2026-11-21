@@ -62,6 +62,7 @@ const (
 	ErrorInvalidMessageType     = "invalidMessageType"
 	ErrorUnsupportedMessageType = "unsupportedMessageType"
 	ErrorImplausibleTimestamp   = "implausibleTimestamp"
+	ErrorNoConversation         = "noConversation"
 )
 
 // errorCodePattern matches a translatable code and nothing else.

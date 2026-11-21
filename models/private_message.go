@@ -26,18 +26,21 @@ type PrivateMessage struct {
 	Id       string `json:"id" validate:"required" gorm:"primarykey"`
 	SenderId string `json:"senderId" validate:"required"`
 	// PeerId is the other participant, filled per viewer by ToWire.
-	PeerId          string          `json:"peerId" validate:"required" gorm:"-"`
-	Conversation    string          `json:"-" validate:"required"`
-	ReceiverId      string          `json:"-" validate:"required"`
-	Content         json.RawMessage `json:"content" validate:"required"`
-	Key             json.RawMessage `json:"key" validate:"required" gorm:"column:wrapped_key"`
-	Nonce           json.RawMessage `json:"nonce" validate:"required"`
-	Mac             json.RawMessage `json:"mac" validate:"required"`
-	SentAt          time.Time       `json:"sentAt" validate:"required"`
-	ExpiresAt       time.Time       `json:"-"`
-	DeletedAt       *time.Time      `json:"deletedAt"`
-	EditedAt        *time.Time      `json:"editedAt"`
-	RecipientOnline bool            `json:"recipientOnline" validate:"required" gorm:"-"`
+	PeerId       string          `json:"peerId" validate:"required" gorm:"-"`
+	Conversation string          `json:"-" validate:"required"`
+	ReceiverId   string          `json:"-" validate:"required"`
+	Content      json.RawMessage `json:"content" validate:"required"`
+	Key          json.RawMessage `json:"key" validate:"required" gorm:"column:wrapped_key"`
+	Nonce        json.RawMessage `json:"nonce" validate:"required"`
+	Mac          json.RawMessage `json:"mac" validate:"required"`
+	SentAt       time.Time       `json:"sentAt" validate:"required"`
+	ExpiresAt    time.Time       `json:"-"`
+	// TTLSeconds is the sender's requested lifetime. It is never stored:
+	// InsertMessage folds it into ExpiresAt.
+	TTLSeconds      int        `json:"-" gorm:"-"`
+	DeletedAt       *time.Time `json:"deletedAt"`
+	EditedAt        *time.Time `json:"editedAt"`
+	RecipientOnline bool       `json:"recipientOnline" validate:"required" gorm:"-"`
 }
 
 // ToWire returns the message as one participant sees it.

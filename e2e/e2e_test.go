@@ -1005,6 +1005,129 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("ephemeral frames stay between peers of a conversation", func(t *testing.T) {
+		sender := e.register(t, "ephemsender")
+		peer := e.register(t, "ephempeer")
+		stranger := e.register(t, "ephemstranger")
+		senderTokens := e.authenticate(t, sender)
+		peerTokens := e.authenticate(t, peer)
+		strangerTokens := e.authenticate(t, stranger)
+
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+		peerConn := e.dialWS(t, e.wsToken(t, peerTokens.AccessToken))
+		defer func() { _ = peerConn.Close() }()
+		strangerConn := e.dialWS(t, e.wsToken(t, strangerTokens.AccessToken))
+		defer func() { _ = strangerConn.Close() }()
+
+		// Without one message between them there is no conversation, and the
+		// relay must not answer whether the account exists beyond the code.
+		e.writeFrame(t, senderConn, models.WsMessageTopicTyping,
+			models.WsTypingRequest{PeerId: peer.Id})
+		if code := e.readError(t, senderConn); code != utils.ErrorNoConversation {
+			t.Fatalf("typing without a conversation: %q", code)
+		}
+
+		e.sendMessage(t, senderConn, peer.Id, `"hello"`)
+		e.readAck(t, senderConn)
+		_ = e.readMessage(t, peerConn)
+
+		e.writeFrame(t, senderConn, models.WsMessageTopicTyping,
+			models.WsTypingRequest{PeerId: peer.Id})
+		var typing models.TypingFrame
+		e.readRelay(t, peerConn, models.WsResponseTypeTyping, &typing)
+		if typing.PeerId != sender.Id || typing.V != 1 {
+			t.Fatalf("unexpected typing frame: %+v", typing)
+		}
+
+		// A stranger cannot push metadata at an account it never talked to.
+		e.writeFrame(t, strangerConn, models.WsMessageTopicLiveLocation,
+			models.WsLiveLocationRequest{PeerId: peer.Id, Payload: "c2VjcmV0"})
+		if code := e.readError(t, strangerConn); code != utils.ErrorNoConversation {
+			t.Fatalf("live location without a conversation: %q", code)
+		}
+
+		// Presence reaches the peer; the stranger it names is skipped silently.
+		// The silence is asserted last: a timed out read is fatal for a socket.
+		e.writeFrame(t, senderConn, models.WsMessageTopicPresence,
+			models.WsPresenceRequest{PeerIds: []string{peer.Id, stranger.Id}, Online: true})
+		var online models.PresenceFrame
+		e.readRelay(t, peerConn, models.WsResponseTypePresence, &online)
+		if online.PeerId != sender.Id || !online.Online || online.LastSeenAt != nil || online.V != 1 {
+			t.Fatalf("unexpected presence frame: %+v", online)
+		}
+		e.expectNoFrame(t, strangerConn)
+
+		// Going away is stamped by the server, so a client clock cannot place
+		// its own last seen wherever it likes.
+		e.writeFrame(t, senderConn, models.WsMessageTopicPresence,
+			models.WsPresenceRequest{PeerIds: []string{peer.Id}, Online: false})
+		var offline models.PresenceFrame
+		e.readRelay(t, peerConn, models.WsResponseTypePresence, &offline)
+		if offline.PeerId != sender.Id || offline.Online || offline.LastSeenAt == nil {
+			t.Fatalf("unexpected presence frame: %+v", offline)
+		}
+		if offline.LastSeenAt.Before(time.Now().Add(-time.Minute)) {
+			t.Fatalf("last seen not stamped now: %s", *offline.LastSeenAt)
+		}
+
+		// A live position is relayed verbatim: the server only ever sees the
+		// ciphertext the sender encrypted for the peer.
+		e.writeFrame(t, senderConn, models.WsMessageTopicLiveLocation,
+			models.WsLiveLocationRequest{PeerId: peer.Id, Payload: "c2VjcmV0"})
+		var location models.LiveLocationFrame
+		e.readRelay(t, peerConn, models.WsResponseTypeLiveLocation, &location)
+		if location.PeerId != sender.Id || location.Payload != "c2VjcmV0" || location.V != 1 {
+			t.Fatalf("unexpected live location frame: %+v", location)
+		}
+
+		// Nothing an ephemeral frame carried reached the archive.
+		synced := e.sync(t, peerConn, 0)
+		if len(synced.Messages) != 1 {
+			t.Fatalf("ephemeral frames were archived: %d messages", len(synced.Messages))
+		}
+	})
+
+	t.Run("a disappearing message leaves the archive before the retention", func(t *testing.T) {
+		sender := e.register(t, "ttlsender")
+		receiver := e.register(t, "ttlreceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+
+		e.sendMessageWithTTL(t, senderConn, receiver.Id, `"ephemeral"`, 1)
+		ack := e.readAck(t, senderConn)
+
+		var page models.HistoryPage
+		if status := e.doJSON(t, http.MethodGet, "/api/messages?peerId="+receiver.Id, nil, senderTokens.AccessToken, &page); status != http.StatusOK {
+			t.Fatalf("history status: %d", status)
+		}
+		if len(page.Messages) != 1 {
+			t.Fatalf("history before the expiry: %d messages", len(page.Messages))
+		}
+
+		// The sweeper runs on its own schedule; the test drives it once the
+		// sender's one second is over.
+		time.Sleep(1200 * time.Millisecond)
+		if _, err := database.PruneExpired(1000); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+		synced := e.sync(t, receiverConn, 0)
+		for _, message := range synced.Messages {
+			if message.Id == ack.Id {
+				t.Fatal("a disappearing message survived its ttl")
+			}
+		}
+		if len(synced.Messages) != 0 {
+			t.Fatalf("the archive still holds %d messages", len(synced.Messages))
+		}
+	})
+
 }
 
 func startEnv(t *testing.T) *env {
@@ -1564,4 +1687,77 @@ func mediaFiles(t *testing.T, dir string) map[string]bool {
 		files[entry.Name()] = true
 	}
 	return files
+}
+
+// writeFrame writes one client frame of any topic.
+func (e *env) writeFrame(t *testing.T, conn *websocket.Conn, topic models.WsMessageType, payload interface{}) {
+	t.Helper()
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := json.Marshal(models.WsMessage{Type: topic, Payload: encoded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
+		t.Fatalf("write ws %s frame: %v", topic, err)
+	}
+}
+
+// sendMessageWithTTL writes one message frame that asks for a shorter life than
+// the account retention.
+func (e *env) sendMessageWithTTL(t *testing.T, conn *websocket.Conn, receiverID string, content string, ttlSeconds int) {
+	t.Helper()
+	payload := json.RawMessage(fmt.Sprintf(`{"receiverId":%q,"content":%s,"key":"key","nonce":"nonce","mac":"mac","sentAt":%q,"ttlSeconds":%d}`,
+		receiverID, content, time.Now().UTC().Format(time.RFC3339Nano), ttlSeconds))
+	message, err := json.Marshal(models.WsMessage{Type: models.WsMessageTopicMessage, Payload: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteMessage(websocket.BinaryMessage, message); err != nil {
+		t.Fatalf("send ws message: %v", err)
+	}
+}
+
+// readRelay waits for one relayed frame of the wanted type, skipping everything
+// else the socket may carry.
+func (e *env) readRelay(t *testing.T, conn *websocket.Conn, want models.WsResponseType, out interface{}) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_ = conn.SetReadDeadline(deadline)
+		var response struct {
+			Type    string          `json:"type"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		messageType, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read ws %s frame: %v", want, err)
+		}
+		if messageType != websocket.BinaryMessage {
+			t.Fatalf("unexpected ws message type: %d", messageType)
+		}
+		if err := json.Unmarshal(data, &response); err != nil {
+			t.Fatalf("decode ws frame: %v", err)
+		}
+		if response.Type != string(want) {
+			continue
+		}
+		if err := json.Unmarshal(response.Payload, out); err != nil {
+			t.Fatalf("decode %s payload: %v", want, err)
+		}
+		return
+	}
+}
+
+// expectNoFrame asserts the socket stays silent for a moment. Gorilla keeps the
+// read error of a timed out read, so only use it on a socket nothing else reads
+// from afterwards.
+func (e *env) expectNoFrame(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("a frame arrived that should not have been relayed")
+	}
 }

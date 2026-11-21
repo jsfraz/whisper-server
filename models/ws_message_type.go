@@ -9,6 +9,10 @@ type WsMessageType string
 const (
 	WsMessageTopicMessage WsMessageType = "message"
 	WsMessageTopicSync    WsMessageType = "sync"
+	// The ephemeral topics are relayed and never archived.
+	WsMessageTopicTyping       WsMessageType = "typing"
+	WsMessageTopicPresence     WsMessageType = "presence"
+	WsMessageTopicLiveLocation WsMessageType = "liveLocation"
 )
 
 // ValidateWsMessageType is a custom validator for WsMessageTopic
@@ -18,7 +22,8 @@ const (
 func ValidateWsMessageType(fl validator.FieldLevel) bool {
 	topic := WsMessageType(fl.Field().String())
 	switch topic {
-	case WsMessageTopicMessage, WsMessageTopicSync:
+	case WsMessageTopicMessage, WsMessageTopicSync,
+		WsMessageTopicTyping, WsMessageTopicPresence, WsMessageTopicLiveLocation:
 		return true
 	}
 	return false

@@ -34,6 +34,12 @@ func ProcessWsMessage(conn *utils.WSConnection, message models.WsMessage) {
 		processPrivateMessage(conn, message.Payload)
 	case models.WsMessageTopicSync:
 		processSync(conn, message.Payload)
+	case models.WsMessageTopicTyping:
+		processTyping(conn, message.Payload)
+	case models.WsMessageTopicPresence:
+		processPresence(conn, message.Payload)
+	case models.WsMessageTopicLiveLocation:
+		processLiveLocation(conn, message.Payload)
 	default:
 		conn.SendError(errors.New(utils.ErrorUnsupportedMessageType))
 	}
@@ -107,6 +113,7 @@ func processPrivateMessage(conn *utils.WSConnection, payload json.RawMessage) {
 		Nonce:      privateMessage.Nonce,
 		Mac:        privateMessage.Mac,
 		SentAt:     privateMessage.SentAt,
+		TTLSeconds: privateMessage.TTLSeconds,
 	}
 	if err := database.InsertMessage(&message, retention); err != nil {
 		conn.SendError(err)

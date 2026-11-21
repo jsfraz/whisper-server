@@ -13,6 +13,10 @@ const (
 	WsResponseTypeReaction      WsResponseType = "reaction"
 	WsResponseTypePin           WsResponseType = "pin"
 	WsResponseTypeRead          WsResponseType = "read"
+	// The ephemeral frames are relayed only, never stored or replayed.
+	WsResponseTypeTyping       WsResponseType = "typing"
+	WsResponseTypePresence     WsResponseType = "presence"
+	WsResponseTypeLiveLocation WsResponseType = "liveLocation"
 )
 
 // ResponseTypeForKind maps a mutation log kind to the frame that carries it.

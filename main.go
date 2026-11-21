@@ -104,7 +104,9 @@ func main() {
 
 	// Delete archived ciphertext past its retention. The archive is also the
 	// offline buffer, so this is the only thing that bounds it.
-	go database.RunMessageSweeper(time.Hour)
+	// Five minutes, not an hour: a disappearing message carries its own
+	// expiry, so a slow sweep would keep the ciphertext long past its promise.
+	go database.RunMessageSweeper(5 * time.Minute)
 
 	// Create admin invite if admin does not exist
 	err = database.CreateAdminInvite()
