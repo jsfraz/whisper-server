@@ -51,6 +51,9 @@ const (
 	ErrorMediaNotFound            = "mediaNotFound"
 	ErrorInvalidMediaId           = "invalidMediaId"
 	ErrorTooManyPendingMediaFiles = "tooManyPendingMediaFiles"
+	ErrorMediaUploadNotFound      = "mediaUploadNotFound"
+	ErrorUploadOffsetMismatch     = "uploadOffsetMismatch"
+	ErrorUploadIncomplete         = "uploadIncomplete"
 
 	ErrorMessageNotFound        = "messageNotFound"
 	ErrorCannotSendToSelf       = "cannotSendToSelf"

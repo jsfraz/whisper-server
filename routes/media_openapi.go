@@ -44,6 +44,15 @@ func addMediaOperations(gen *openapi.Generator) {
 		},
 		Required: []string{"id"},
 	}}
+	doc.Components.Schemas["ModelsMediaUploadSessionResponse"] = &openapi.SchemaOrRef{Schema: &openapi.Schema{
+		Type: "object",
+		Properties: map[string]*openapi.SchemaOrRef{
+			"id":        {Schema: &openapi.Schema{Type: "string"}},
+			"received":  {Schema: &openapi.Schema{Type: "integer", Format: "int64", Description: "Bytes the server holds."}},
+			"totalSize": {Schema: &openapi.Schema{Type: "integer", Format: "int64", Description: "Ciphertext length the client declared."}},
+		},
+		Required: []string{"id", "received", "totalSize"},
+	}}
 
 	security := []*openapi.SecurityRequirement{{"bearerAuth": []string{}}}
 
@@ -136,4 +145,109 @@ func addMediaOperations(gen *openapi.Generator) {
 		doc.Paths["/api/media/{id}"] = item
 	}
 	item.GET = download
+
+	addMediaUploadOperations(gen)
+}
+
+// addMediaUploadOperations documents the chunked upload: one raw Gin handler
+// (the chunk append) plus the response schemas fizz cannot derive from handlers
+// that write JSON themselves.
+func addMediaUploadOperations(gen *openapi.Generator) {
+	doc := gen.API()
+	security := []*openapi.SecurityRequirement{{"bearerAuth": []string{}}}
+	sessionSchema := &openapi.SchemaOrRef{Reference: &openapi.Reference{
+		Ref: "#/components/schemas/ModelsMediaUploadSessionResponse",
+	}}
+	sessionBody := func() map[string]*openapi.MediaTypeOrRef {
+		return map[string]*openapi.MediaTypeOrRef{
+			"application/json": {MediaType: &openapi.MediaType{
+				Schema: sessionSchema,
+			}},
+		}
+	}
+
+	if item := doc.Paths["/api/media/uploads"]; item != nil && item.POST != nil {
+		item.POST.Responses["200"] = &openapi.ResponseOrRef{Response: &openapi.Response{
+			Description: "The upload session, with the offset the server holds.",
+			Content:     sessionBody(),
+		}}
+	}
+
+	chunk := &openapi.Operation{
+		Tags:        []string{"Media"},
+		Summary:     "Upload one chunk",
+		Description: "Appends one chunk of the encrypted media file at the Upload-Offset header. A chunk at a different offset is refused with 409 and the offset the server holds.",
+		ID:          "UploadMediaChunk",
+		Security:    security,
+		Parameters: []*openapi.ParameterOrRef{
+			{Parameter: &openapi.Parameter{
+				Name:     "id",
+				In:       "path",
+				Required: true,
+				Schema:   &openapi.SchemaOrRef{Schema: &openapi.Schema{Type: "string"}},
+			}},
+			{Parameter: &openapi.Parameter{
+				Name:        "Upload-Offset",
+				In:          "header",
+				Required:    true,
+				Description: "Byte offset this chunk starts at; must equal the received count.",
+				Schema:      &openapi.SchemaOrRef{Schema: &openapi.Schema{Type: "integer", Format: "int64"}},
+			}},
+		},
+		RequestBody: &openapi.RequestBody{
+			Required: true,
+			Content: map[string]*openapi.MediaType{
+				"multipart/form-data": {Schema: &openapi.SchemaOrRef{Schema: &openapi.Schema{
+					Type: "object",
+					Properties: map[string]*openapi.SchemaOrRef{
+						"chunk": {Schema: &openapi.Schema{
+							Type:        "string",
+							Format:      "binary",
+							Description: "One slice of the encrypted media blob. Its field name must be chunk.",
+						}},
+					},
+					Required: []string{"chunk"},
+				}}},
+			},
+		},
+		Responses: openapi.Responses{
+			"200": {Response: &openapi.Response{
+				Description: "The upload session, with the new offset.",
+				Content:     sessionBody(),
+			}},
+			"400": errorResponse("Bad Request"),
+			"401": errorResponse("Unauthorized"),
+			"403": errorResponse("Forbidden"),
+			"404": errorResponse("Not Found"),
+			"409": errorResponse("Offset Mismatch"),
+			"413": errorResponse("Request Entity Too Large"),
+			"500": errorResponse("Internal Server Error"),
+		},
+	}
+
+	item := doc.Paths["/api/media/uploads/{id}"]
+	if item == nil {
+		item = &openapi.PathItem{}
+		doc.Paths["/api/media/uploads/{id}"] = item
+	}
+	item.PUT = chunk
+	if item.GET != nil {
+		item.GET.Responses["200"] = &openapi.ResponseOrRef{Response: &openapi.Response{
+			Description: "The upload session, with the offset the server holds.",
+			Content:     sessionBody(),
+		}}
+	}
+
+	if item := doc.Paths["/api/media/uploads/{id}/complete"]; item != nil && item.POST != nil {
+		item.POST.Responses["200"] = &openapi.ResponseOrRef{Response: &openapi.Response{
+			Description: "The media file is complete and downloadable.",
+			Content: map[string]*openapi.MediaTypeOrRef{
+				"application/json": {MediaType: &openapi.MediaType{
+					Schema: &openapi.SchemaOrRef{Reference: &openapi.Reference{
+						Ref: "#/components/schemas/ModelsMediaUploadResponse",
+					}},
+				}},
+			},
+		}}
+	}
 }

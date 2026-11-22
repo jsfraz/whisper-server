@@ -65,7 +65,11 @@ type Config struct {
 	MediaTtl int `envconfig:"MEDIA_TTL" default:"2592000"` // Default 2592000 (30 days)
 
 	// Maximum allowed upload size for a single media file in bytes
-	MediaMaxUploadSize int64 `envconfig:"MEDIA_MAX_UPLOAD_SIZE" default:"26214400"` // Default 26214400 (25 MiB)
+	MediaMaxUploadSize int64 `envconfig:"MEDIA_MAX_UPLOAD_SIZE" default:"104857600"` // Default 104857600 (100 MiB)
+
+	// How long a chunked upload may stay unfinished before its partial bytes are
+	// swept. The client can resume within this window.
+	MediaUploadTtl int `envconfig:"MEDIA_UPLOAD_TTL" default:"86400"` // Default 86400 (24 hours)
 
 	// Directory where encrypted media files are stored
 	MediaDir string `envconfig:"MEDIA_DIR" default:"data/media"` // Default data/media

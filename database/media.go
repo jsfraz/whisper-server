@@ -18,12 +18,17 @@ import (
 // Prefix for media metadata keys in Valkey.
 const mediaKeyPrefix = "media:"
 
+// Prefix for chunked upload sessions in Valkey.
+const mediaUploadKeyPrefix = "media:upload:"
+
 // Suffix of an upload that is still being written. The file is renamed to its
 // final name only after the metadata is stored, so a sweep never sees a half-written upload.
 const MediaUploadTempSuffix = ".part"
 
 // Upload temp files older than this are considered abandoned (e.g. after a crash).
-const mediaUploadTempMaxAge = time.Hour
+// It must stay above MEDIA_UPLOAD_TTL, or the sweeper would delete the bytes of a
+// session the client can still resume.
+const mediaUploadTempMaxAge = 25 * time.Hour
 
 // Returns the on-disk path for a media file by id.
 //
@@ -100,9 +105,61 @@ func DeleteMedia(id string) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	// Remove metadata key from Valkey
+	// A chunked upload in progress shares the id: both files are one media id,
+	// so the caller asking for it to be gone removes the partial one too.
+	if err := os.Remove(path + MediaUploadTempSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	// Remove metadata and upload session keys from Valkey
 	client := utils.GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Del().Key(mediaKeyPrefix+id).Build()).Error()
+	return client.Do(context.Background(), client.B().Del().Key(mediaKeyPrefix+id).Key(mediaUploadKeyPrefix+id).Build()).Error()
+}
+
+// StoreMediaUploadSession in Valkey with a TTL. The partial ciphertext lives on
+// disk next to the finished files.
+//
+//	@param session
+//	@param ttl
+//	@return error
+func StoreMediaUploadSession(session models.MediaUploadSession, ttl int) error {
+	m, err := session.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Set().Key(mediaUploadKeyPrefix+session.Id).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
+}
+
+// Get a MediaUploadSession by id from Valkey.
+//
+//	@param id
+//	@return bool
+//	@return *models.MediaUploadSession
+//	@return error
+func GetMediaUploadSession(id string) (bool, *models.MediaUploadSession, error) {
+	client := utils.GetSingleton().Valkey
+	result, err := client.Do(context.Background(), client.B().Get().Key(mediaUploadKeyPrefix+id).Build()).AsBytes()
+	if err != nil && !errors.As(err, &valkeyErr) {
+		return false, nil, err
+	}
+	if result == nil {
+		return false, nil, nil
+	}
+	session, err := models.MediaUploadSessionFromJson(result)
+	if err != nil {
+		return false, nil, err
+	}
+	return true, session, nil
+}
+
+// DeleteMediaUploadSession removes the session key. The partial file is left to
+// the caller (it becomes the media file on completion).
+//
+//	@param id
+//	@return error
+func DeleteMediaUploadSession(id string) error {
+	client := utils.GetSingleton().Valkey
+	return client.Do(context.Background(), client.B().Del().Key(mediaUploadKeyPrefix+id).Build()).Error()
 }
 
 // mediaUserKeyPrefix keys the set of media ids a user participates in, so media
@@ -272,19 +329,32 @@ func SubscribeExpiredMedia() {
 	wait := c.SetPubSubHooks(valkey.PubSubHooks{
 		OnMessage: func(m valkey.PubSubMessage) {
 			// Message payload is the expired key name, e.g. "media:{id}"
-			if !strings.HasPrefix(m.Message, mediaKeyPrefix) {
-				return
-			}
-			id := strings.TrimPrefix(m.Message, mediaKeyPrefix)
-			// Metadata key has already expired, just remove the file from disk
-			path, err := MediaFilePath(id)
-			if err != nil {
-				slog.Error("failed to resolve expired media file path", "media_id", id, "error", err)
-				return
-			}
-			err = os.Remove(path)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				slog.Error("failed to delete expired media file", "media_id", id, "error", err)
+			switch {
+			// An upload session that expired leaves only its partial file behind.
+			case strings.HasPrefix(m.Message, mediaUploadKeyPrefix):
+				id := strings.TrimPrefix(m.Message, mediaUploadKeyPrefix)
+				path, err := MediaFilePath(id)
+				if err != nil {
+					slog.Error("failed to resolve expired upload path", "media_id", id, "error", err)
+					return
+				}
+				if err := os.Remove(path + MediaUploadTempSuffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+					slog.Error("failed to delete expired upload file", "media_id", id, "error", err)
+				}
+			// The per-user index holds no file of its own.
+			case strings.HasPrefix(m.Message, mediaUserKeyPrefix):
+			case strings.HasPrefix(m.Message, mediaKeyPrefix):
+				id := strings.TrimPrefix(m.Message, mediaKeyPrefix)
+				// Metadata key has already expired, just remove the file from disk
+				path, err := MediaFilePath(id)
+				if err != nil {
+					slog.Error("failed to resolve expired media file path", "media_id", id, "error", err)
+					return
+				}
+				err = os.Remove(path)
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					slog.Error("failed to delete expired media file", "media_id", id, "error", err)
+				}
 			}
 		},
 	})

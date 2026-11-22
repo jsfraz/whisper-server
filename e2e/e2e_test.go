@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -560,6 +561,114 @@ func TestE2E(t *testing.T) {
 		}
 		if status := e.doJSON(t, http.MethodGet, "/api/media/"+mediaID, nil, receiverTokens.AccessToken, nil); status != http.StatusNotFound {
 			t.Fatalf("download after confirm status: %d", status)
+		}
+	})
+
+	t.Run("a chunked upload resumes at the offset the server holds", func(t *testing.T) {
+		sender := e.register(t, "chunksender")
+		receiver := e.register(t, "chunkreceiver")
+		outsider := e.register(t, "chunkoutsider")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+		outsiderTokens := e.authenticate(t, outsider)
+
+		ciphertext := make([]byte, 4096)
+		if _, err := rand.Read(ciphertext); err != nil {
+			t.Fatal(err)
+		}
+
+		var session models.MediaUploadSessionResponse
+		if status := e.doJSON(t, http.MethodPost, "/api/media/uploads", models.MediaUploadSessionInput{
+			ReceiverId: receiver.Id,
+			TotalSize:  int64(len(ciphertext)),
+		}, senderTokens.AccessToken, &session); status != http.StatusOK {
+			t.Fatalf("create upload status: %d", status)
+		}
+		if session.Received != 0 || session.TotalSize != int64(len(ciphertext)) {
+			t.Fatalf("new session: %+v", session)
+		}
+
+		// Another account may not touch the session.
+		if status := e.putChunkStatus(t, outsiderTokens.AccessToken, session.Id, 0, ciphertext[:1000]); status != http.StatusForbidden {
+			t.Fatalf("outsider chunk status: %d", status)
+		}
+
+		// The first chunk lands, and completing now is refused: bytes are missing.
+		if status := e.putChunkStatus(t, senderTokens.AccessToken, session.Id, 0, ciphertext[:1000]); status != http.StatusOK {
+			t.Fatalf("first chunk status: %d", status)
+		}
+		if status := e.doJSON(t, http.MethodPost, "/api/media/uploads/"+session.Id+"/complete", nil, senderTokens.AccessToken, nil); status != http.StatusBadRequest {
+			t.Fatalf("early complete status: %d", status)
+		}
+
+		// A chunk at an offset the server does not hold is refused with the offset it does.
+		var mismatch struct {
+			Error    string `json:"error"`
+			Received int64  `json:"received"`
+		}
+		if status := e.doMultipart(t, http.MethodPut, "/api/media/uploads/"+session.Id, "chunk", "chunk.bin", ciphertext[:1000], map[string]string{
+			"Upload-Offset": "0",
+		}, senderTokens.AccessToken, &mismatch); status != http.StatusConflict {
+			t.Fatalf("offset mismatch status: %d", status)
+		}
+		if mismatch.Error != utils.ErrorUploadOffsetMismatch || mismatch.Received != 1000 {
+			t.Fatalf("offset mismatch body: %+v", mismatch)
+		}
+
+		// Resume from the reported offset.
+		var resumed models.MediaUploadSessionResponse
+		if status := e.doJSON(t, http.MethodGet, "/api/media/uploads/"+session.Id, nil, senderTokens.AccessToken, &resumed); status != http.StatusOK {
+			t.Fatalf("upload state status: %d", status)
+		}
+		if resumed.Received != 1000 {
+			t.Fatalf("upload state received: %d", resumed.Received)
+		}
+		if status := e.putChunkStatus(t, senderTokens.AccessToken, session.Id, resumed.Received, ciphertext[resumed.Received:]); status != http.StatusOK {
+			t.Fatalf("resumed chunk status: %d", status)
+		}
+
+		var completed models.MediaUploadResponse
+		if status := e.doJSON(t, http.MethodPost, "/api/media/uploads/"+session.Id+"/complete", nil, senderTokens.AccessToken, &completed); status != http.StatusOK {
+			t.Fatalf("complete status: %d", status)
+		}
+		if completed.Id != session.Id {
+			t.Fatalf("completed id %q, want %q", completed.Id, session.Id)
+		}
+
+		// The assembled file is the ciphertext and is readable by the receiver only.
+		stored, err := os.ReadFile(filepath.Join(e.mediaDir, completed.Id)) //nolint:gosec // server-generated id inside the test media dir
+		if err != nil {
+			t.Fatalf("read stored media: %v", err)
+		}
+		if !bytes.Equal(stored, ciphertext) {
+			t.Fatal("assembled media differs from the uploaded ciphertext")
+		}
+		if downloaded := e.downloadMedia(t, receiverTokens.AccessToken, completed.Id); !bytes.Equal(downloaded, ciphertext) {
+			t.Fatal("downloaded media differs from the uploaded ciphertext")
+		}
+
+		// The session is spent, so the same id cannot be completed twice.
+		if status := e.doJSON(t, http.MethodGet, "/api/media/uploads/"+session.Id, nil, senderTokens.AccessToken, nil); status != http.StatusNotFound {
+			t.Fatalf("finished session state status: %d", status)
+		}
+	})
+
+	t.Run("a chunked upload above the limit is refused before any bytes land", func(t *testing.T) {
+		sender := e.register(t, "chunkbigsender")
+		receiver := e.register(t, "chunkbigreceiver")
+		senderTokens := e.authenticate(t, sender)
+
+		limit := utils.GetSingleton().Config.MediaMaxUploadSize
+		before := mediaFiles(t, e.mediaDir)
+		status := e.doJSON(t, http.MethodPost, "/api/media/uploads", models.MediaUploadSessionInput{
+			ReceiverId: receiver.Id,
+			TotalSize:  limit + 1,
+		}, senderTokens.AccessToken, nil)
+		if status != http.StatusRequestEntityTooLarge {
+			t.Fatalf("oversized session status: %d", status)
+		}
+		if after := mediaFiles(t, e.mediaDir); len(after) != len(before) {
+			t.Fatalf("oversized session stored a file: %v", after)
 		}
 	})
 
@@ -1253,6 +1362,7 @@ func startEnv(t *testing.T) *env {
 		WsAccessTokenSecret:   wsSecret,
 		WsAccessTokenLifespan: 60,
 		MediaTtl:              60,
+		MediaUploadTtl:        60,
 		MediaMaxUploadSize:    1 << 20,
 		MediaDir:              mediaDir,
 		// The whole suite talks from 127.0.0.1; the limiter would reject the
@@ -1633,6 +1743,60 @@ func (e *env) uploadRaw(t *testing.T, accessToken string, receiverID string, cip
 		t.Fatal(err)
 	}
 	return response
+}
+
+// putChunkStatus appends one chunk of a chunked upload and returns the status.
+func (e *env) putChunkStatus(t *testing.T, accessToken string, uploadID string, offset int64, chunk []byte) int {
+	t.Helper()
+	return e.doMultipart(t, http.MethodPut, "/api/media/uploads/"+uploadID, "chunk", "chunk.bin", chunk,
+		map[string]string{"Upload-Offset": strconv.FormatInt(offset, 10)}, accessToken, nil)
+}
+
+// doMultipart sends one binary field as multipart/form-data and decodes a JSON reply.
+func (e *env) doMultipart(t *testing.T, method string, path string, field string, fileName string, data []byte, headers map[string]string, accessToken string, out any) int {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile(field, fileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := http.NewRequest(method, e.server.URL+path, &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	if accessToken != "" {
+		request.Header.Set("Authorization", "Bearer "+accessToken)
+	}
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	reply, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		t.Logf("%s %s -> %d %s", method, path, response.StatusCode, strings.TrimSpace(string(reply)))
+	}
+	if out != nil && len(reply) > 0 {
+		if err := json.Unmarshal(reply, out); err != nil {
+			t.Fatalf("decode %s: %v (%s)", path, err, reply)
+		}
+	}
+	return response.StatusCode
 }
 
 func (e *env) downloadMedia(t *testing.T, accessToken string, mediaID string) []byte {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -50,7 +51,7 @@ func UploadMedia(c *gin.Context) {
 
 func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*models.MediaUploadResponse, error) {
 	senderId, _ := c.Get("userId")
-	senderIdUint := senderId.(string)
+	sender := senderId.(string)
 
 	// Enforce maximum upload size
 	maxUpload := utils.GetSingleton().Config.MediaMaxUploadSize
@@ -58,38 +59,11 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New(utils.ErrorMediaFileTooLarge))
 	}
 
-	// Can not send media to self (in production)
-	if senderIdUint == request.ReceiverId && utils.GetSingleton().Config.GinMode == "release" {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToSelf))
+	if err := validateMediaReceiver(c, sender, request.ReceiverId); err != nil {
+		return nil, err
 	}
-
-	// Check if receiver is being deleted
-	toDelete, err := database.WillUserBeDeleted(request.ReceiverId)
-	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	if toDelete {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToUser))
-	}
-
-	// Check if receiver exists
-	exists, err := database.UserExistsById(request.ReceiverId)
-	if err != nil {
-		return nil, c.AbortWithError(http.StatusInternalServerError, err)
-	}
-	if !exists {
-		return nil, c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorUserNotFound))
-	}
-
-	// Per account quota: one user must not fill the disk for everyone.
-	if maxPerUser := utils.GetSingleton().Config.MediaMaxPerUser; maxPerUser > 0 {
-		count, err := database.UserMediaCount(senderIdUint)
-		if err != nil {
-			return nil, c.AbortWithError(http.StatusInternalServerError, err)
-		}
-		if count >= int64(maxPerUser) {
-			return nil, c.AbortWithError(http.StatusTooManyRequests, errors.New(utils.ErrorTooManyPendingMediaFiles))
-		}
+	if err := checkMediaQuota(c, sender); err != nil {
+		return nil, err
 	}
 
 	// Generate unguessable id and persist the ciphertext to disk
@@ -129,7 +103,7 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	}
 
 	// Store metadata in Valkey with TTL
-	meta := models.NewMediaMetadata(id, senderIdUint, request.ReceiverId, written)
+	meta := models.NewMediaMetadata(id, sender, request.ReceiverId, written)
 	if err := database.StoreMediaMetadata(meta, utils.GetSingleton().Config.MediaTtl); err != nil {
 		os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
@@ -143,11 +117,308 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 
 	// Index the file per participant, so cleanup does not have to scan every
 	// media key in Valkey.
-	if err := database.IndexUserMedia(senderIdUint, request.ReceiverId, id, utils.GetSingleton().Config.MediaTtl); err != nil {
+	if err := database.IndexUserMedia(sender, request.ReceiverId, id, utils.GetSingleton().Config.MediaTtl); err != nil {
 		slog.Warn("failed to index media for cleanup", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
 	}
 
 	return models.NewMediaUploadResponse(id), nil
+}
+
+// validateMediaReceiver rejects a receiver the sender is not allowed to store
+// media for. Shared by the one-shot and the chunked upload.
+func validateMediaReceiver(c *gin.Context, senderId string, receiverId string) error {
+	// Can not send media to self (in production)
+	if senderId == receiverId && utils.GetSingleton().Config.GinMode == "release" {
+		return c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToSelf))
+	}
+
+	// Check if receiver is being deleted
+	toDelete, err := database.WillUserBeDeleted(receiverId)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if toDelete {
+		return c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorCannotSendToUser))
+	}
+
+	// Check if receiver exists
+	exists, err := database.UserExistsById(receiverId)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if !exists {
+		return c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorUserNotFound))
+	}
+	return nil
+}
+
+// checkMediaQuota enforces MEDIA_MAX_PER_USER: one account must not fill the
+// disk for everyone. In-progress chunked uploads count, since their bytes are
+// already on disk.
+func checkMediaQuota(c *gin.Context, senderId string) error {
+	maxPerUser := utils.GetSingleton().Config.MediaMaxPerUser
+	if maxPerUser <= 0 {
+		return nil
+	}
+	count, err := database.UserMediaCount(senderId)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if count >= int64(maxPerUser) {
+		return c.AbortWithError(http.StatusTooManyRequests, errors.New(utils.ErrorTooManyPendingMediaFiles))
+	}
+	return nil
+}
+
+// mediaUploadLocks serializes the appends of one upload session. The server is a
+// single process, so an in-process map is enough; two chunks arriving at the same
+// offset would otherwise interleave into a corrupt file.
+var mediaUploadLocks sync.Map
+
+// mediaUploadLock returns the append lock of one upload session.
+func mediaUploadLock(id string) *sync.Mutex {
+	lock, _ := mediaUploadLocks.LoadOrStore(id, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
+
+// CreateMediaUpload starts a chunked upload. The ciphertext is appended chunk by
+// chunk (see UploadMediaChunk) and becomes a media file on CompleteMediaUpload,
+// so a large attachment survives a connection that breaks halfway.
+//
+//	@param c
+//	@param request
+//	@return error
+func CreateMediaUpload(c *gin.Context, request *models.MediaUploadSessionInput) error {
+	senderId, _ := c.Get("userId")
+	sender := senderId.(string)
+
+	maxUpload := utils.GetSingleton().Config.MediaMaxUploadSize
+	if request.TotalSize > maxUpload {
+		return c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New(utils.ErrorMediaFileTooLarge))
+	}
+	if err := validateMediaReceiver(c, sender, request.ReceiverId); err != nil {
+		return err
+	}
+	if err := checkMediaQuota(c, sender); err != nil {
+		return err
+	}
+
+	id := uuid.New().String()
+	path, err := database.MediaFilePath(id)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Create the partial file up front, so an early chunk never has to decide
+	// whether the file or the session is missing.
+	partial, err := os.Create(path + database.MediaUploadTempSuffix)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if err := partial.Close(); err != nil {
+		os.Remove(path + database.MediaUploadTempSuffix)
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	session := models.NewMediaUploadSession(id, sender, request.ReceiverId, request.TotalSize)
+	ttl := utils.GetSingleton().Config.MediaUploadTtl
+	if err := database.StoreMediaUploadSession(session, ttl); err != nil {
+		os.Remove(path + database.MediaUploadTempSuffix)
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	// Indexed like a finished file, so the quota counts it and account deletion
+	// removes the partial bytes too.
+	if err := database.IndexUserMedia(sender, request.ReceiverId, id, ttl); err != nil {
+		slog.Warn("failed to index upload for cleanup", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
+	}
+
+	c.JSON(http.StatusOK, models.NewMediaUploadSessionResponse(session))
+	return nil
+}
+
+// UploadMediaChunk appends one chunk of the ciphertext at the Upload-Offset
+// header. A chunk that does not start at the stored offset is refused with 409
+// and the offset the server holds, which is how a client resumes.
+//
+// Registered as a raw gin handler: the body is multipart/form-data (chunk).
+// There is deliberately no per-request rate limit here: one file is many chunks,
+// so it would throttle exactly the large uploads this endpoint exists for; the
+// per-account quota is the bound that matters.
+//
+//	@param c
+func UploadMediaChunk(c *gin.Context) {
+	id := c.Param("id")
+	maxUpload := utils.GetSingleton().Config.MediaMaxUploadSize
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUpload+(1<<20))
+
+	offset, err := strconv.ParseInt(c.GetHeader("Upload-Offset"), 10, 64)
+	if err != nil || offset < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorInvalidRequest})
+		return
+	}
+
+	userId, _ := c.Get("userId")
+	sender := userId.(string)
+
+	lock := mediaUploadLock(id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	found, session, err := database.GetMediaUploadSession(id)
+	if err != nil {
+		slog.Error("failed to load upload session", "media_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": utils.ErrorMediaUploadNotFound})
+		return
+	}
+	if session.SenderId != sender {
+		c.JSON(http.StatusForbidden, gin.H{"error": utils.ErrorNotAuthorized})
+		return
+	}
+	if offset != session.Received {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":    utils.ErrorUploadOffsetMismatch,
+			"received": session.Received,
+		})
+		return
+	}
+
+	src, header, err := c.Request.FormFile("chunk")
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": utils.ErrorMediaFileTooLarge})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorInvalidRequest})
+		return
+	}
+	defer func() { _ = src.Close() }()
+
+	remaining := session.TotalSize - session.Received
+	if header.Size > remaining {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": utils.ErrorMediaFileTooLarge})
+		return
+	}
+
+	path, err := database.MediaFilePath(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorInvalidMediaId})
+		return
+	}
+	// Open without O_APPEND: the offset is the authority, and the lock above
+	// keeps two writers apart.
+	dst, err := os.OpenFile(path+database.MediaUploadTempSuffix, os.O_WRONLY, 0) //nolint:gosec // path from MediaFilePath, which only accepts a UUID
+	if err != nil {
+		// The session outlived its bytes (swept or removed): the client restarts.
+		_ = database.DeleteMediaUploadSession(id)
+		c.JSON(http.StatusNotFound, gin.H{"error": utils.ErrorMediaUploadNotFound})
+		return
+	}
+	defer func() { _ = dst.Close() }()
+	if _, err := dst.Seek(offset, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
+		return
+	}
+	written, err := io.Copy(dst, io.LimitReader(src, remaining+1))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
+		return
+	}
+	if written > remaining {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": utils.ErrorMediaFileTooLarge})
+		return
+	}
+
+	session.Received = offset + written
+	if err := database.StoreMediaUploadSession(*session, utils.GetSingleton().Config.MediaUploadTtl); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
+		return
+	}
+	c.JSON(http.StatusOK, models.NewMediaUploadSessionResponse(*session))
+}
+
+// GetMediaUpload reports how much of a chunked upload the server holds.
+//
+//	@param c
+//	@param request
+//	@return error
+func GetMediaUpload(c *gin.Context, request *models.MediaUploadIdUri) error {
+	userId, _ := c.Get("userId")
+	sender := userId.(string)
+
+	found, session, err := database.GetMediaUploadSession(request.Id)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if !found {
+		return c.AbortWithError(http.StatusNotFound, errors.New(utils.ErrorMediaUploadNotFound))
+	}
+	if session.SenderId != sender {
+		return c.AbortWithError(http.StatusForbidden, errors.New(utils.ErrorNotAuthorized))
+	}
+	c.JSON(http.StatusOK, models.NewMediaUploadSessionResponse(*session))
+	return nil
+}
+
+// CompleteMediaUpload turns a fully received chunked upload into a media file
+// the receiver can download. Only the sender may complete it, and only once
+// every byte is in.
+//
+//	@param c
+//	@param request
+//	@return error
+func CompleteMediaUpload(c *gin.Context, request *models.MediaUploadIdUri) error {
+	userId, _ := c.Get("userId")
+	sender := userId.(string)
+
+	lock := mediaUploadLock(request.Id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	found, session, err := database.GetMediaUploadSession(request.Id)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if !found {
+		return c.AbortWithError(http.StatusNotFound, errors.New(utils.ErrorMediaUploadNotFound))
+	}
+	if session.SenderId != sender {
+		return c.AbortWithError(http.StatusForbidden, errors.New(utils.ErrorNotAuthorized))
+	}
+	if session.Received != session.TotalSize {
+		return c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorUploadIncomplete))
+	}
+
+	path, err := database.MediaFilePath(request.Id)
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	tmpPath := path + database.MediaUploadTempSuffix
+	if _, err := os.Stat(tmpPath); err != nil {
+		_ = database.DeleteMediaUploadSession(request.Id)
+		return c.AbortWithError(http.StatusNotFound, errors.New(utils.ErrorMediaUploadNotFound))
+	}
+
+	// Same order as the one-shot upload: metadata first, so the sweeper never
+	// sees a finished file without one.
+	meta := models.NewMediaMetadata(request.Id, session.SenderId, session.ReceiverId, session.Received)
+	if err := database.StoreMediaMetadata(meta, utils.GetSingleton().Config.MediaTtl); err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = database.DeleteMedia(request.Id)
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if err := database.DeleteMediaUploadSession(request.Id); err != nil {
+		slog.Warn("failed to delete upload session", "media_id", request.Id, "error", utils.SanitizeLogValue(err.Error()))
+	}
+	mediaUploadLocks.Delete(request.Id)
+
+	c.JSON(http.StatusOK, models.NewMediaUploadResponse(request.Id))
+	return nil
 }
 
 // Download an encrypted media file by id. Only the intended receiver may download it.
@@ -191,7 +462,7 @@ func DownloadMedia(c *gin.Context) {
 	file, err := os.Open(path)
 	if err != nil {
 		// File missing but metadata present: clean up the orphaned key
-		database.DeleteMedia(id)
+		_ = database.DeleteMedia(id)
 		c.JSON(http.StatusNotFound, gin.H{"error": utils.ErrorMediaNotFound})
 		return
 	}
