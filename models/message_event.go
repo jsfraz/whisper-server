@@ -14,6 +14,7 @@ const (
 	MessageEventDelete   = "delete"
 	MessageEventReaction = "reaction"
 	MessageEventPin      = "pin"
+	MessageEventOpen     = "open"
 )
 
 // MessageEvent is one entry of the mutation log. It follows the archive
@@ -37,8 +38,11 @@ type MessageEvent struct {
 	Nonce        json.RawMessage `json:"nonce"`
 	Mac          json.RawMessage `json:"mac"`
 	// Pinned is set on a pin event only: true pins, false unpins.
-	Pinned    *bool     `json:"pinned,omitempty"`
-	CreatedAt time.Time `json:"createdAt" validate:"required"`
+	Pinned *bool `json:"pinned,omitempty"`
+	// OpenedAt is set on an open event only: the instant the receiver opened
+	// the attachment. The view-once flag itself stays inside the ciphertext.
+	OpenedAt  *time.Time `json:"openedAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt" validate:"required"`
 }
 
 // ToWire returns the event as one participant sees it.

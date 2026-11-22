@@ -865,6 +865,48 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("only the receiver opens a view-once and the sender learns it once", func(t *testing.T) {
+		sender := e.register(t, "oncesender")
+		receiver := e.register(t, "oncereceiver")
+		senderTokens := e.authenticate(t, sender)
+		receiverTokens := e.authenticate(t, receiver)
+
+		senderConn := e.dialWS(t, e.wsToken(t, senderTokens.AccessToken))
+		defer func() { _ = senderConn.Close() }()
+		receiverConn := e.dialWS(t, e.wsToken(t, receiverTokens.AccessToken))
+		defer func() { _ = receiverConn.Close() }()
+
+		e.sendMessage(t, senderConn, receiver.Id, `"once"`)
+		ack := e.readAck(t, senderConn)
+		e.readMessage(t, receiverConn)
+
+		// The sender must not be able to burn the receiver's one view.
+		if status := e.doJSON(t, http.MethodPost, "/api/messages/"+ack.Id+"/open", nil, senderTokens.AccessToken, nil); status != http.StatusForbidden {
+			t.Fatalf("sender open status: %d, want %d", status, http.StatusForbidden)
+		}
+
+		if status := e.doJSON(t, http.MethodPost, "/api/messages/"+ack.Id+"/open", nil, receiverTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("receiver open status: %d", status)
+		}
+		event := e.readEvent(t, senderConn, models.WsResponseTypeOpen)
+		if event.MessageId != ack.Id || event.OpenedAt == nil || event.ActorId != receiver.Id {
+			t.Fatalf("unexpected open event: %+v", event)
+		}
+
+		// Idempotent: a retry neither fails nor moves the instant.
+		if status := e.doJSON(t, http.MethodPost, "/api/messages/"+ack.Id+"/open", nil, receiverTokens.AccessToken, nil); status != http.StatusNoContent {
+			t.Fatalf("second open status: %d", status)
+		}
+		var page models.HistoryPage
+		if status := e.doJSON(t, http.MethodGet, "/api/messages?peerId="+receiver.Id, nil, senderTokens.AccessToken, &page); status != http.StatusOK {
+			t.Fatalf("history status: %d", status)
+		}
+		if len(page.Messages) != 1 || page.Messages[0].OpenedAt == nil ||
+			!page.Messages[0].OpenedAt.Equal(*event.OpenedAt) {
+			t.Fatalf("opened instant not shared: %+v", page.Messages)
+		}
+	})
+
 	t.Run("a read cursor reaches the peer and the sync", func(t *testing.T) {
 		reader := e.register(t, "readreader")
 		peer := e.register(t, "readpeer")

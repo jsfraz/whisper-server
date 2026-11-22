@@ -117,6 +117,34 @@ func RemoveReaction(c *gin.Context, request *models.MessageIdPath) error {
 	return nil
 }
 
+// OpenMessage records that the receiver opened a view-once attachment. Only the
+// receiver may call it: the sender must not be able to burn the recipient's
+// one view. The server cannot verify the attachment is view-once (that flag
+// lives inside the ciphertext), so this is a client-reported state, like a
+// reaction. Idempotent: a second call logs nothing.
+//
+//	@param c
+//	@param request
+//	@return error
+func OpenMessage(c *gin.Context, request *models.MessageIdPath) error {
+	userId, _ := c.Get("userId")
+	row, ok, err := mutableMessage(c, request.Id, false)
+	if !ok {
+		return err
+	}
+	if row.ReceiverId != userId.(string) {
+		return c.AbortWithError(http.StatusForbidden, errors.New(utils.ErrorNotAuthorized))
+	}
+	event, changed, err := database.SetOpened(row, userId.(string), time.Now().UTC())
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if changed {
+		broadcastEvent(event)
+	}
+	return nil
+}
+
 // PinMessage pins a message of the chat for both participants. Anyone in the
 // conversation may pin.
 //

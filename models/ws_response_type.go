@@ -12,6 +12,7 @@ const (
 	WsResponseTypeDelete        WsResponseType = "delete"
 	WsResponseTypeReaction      WsResponseType = "reaction"
 	WsResponseTypePin           WsResponseType = "pin"
+	WsResponseTypeOpen          WsResponseType = "open"
 	WsResponseTypeRead          WsResponseType = "read"
 	// The ephemeral frames are relayed only, never stored or replayed.
 	WsResponseTypeTyping       WsResponseType = "typing"
@@ -34,6 +35,8 @@ func ResponseTypeForKind(kind string) WsResponseType {
 		return WsResponseTypeReaction
 	case MessageEventPin:
 		return WsResponseTypePin
+	case MessageEventOpen:
+		return WsResponseTypeOpen
 	}
 	return WsResponseTypeError
 }

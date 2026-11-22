@@ -142,6 +142,22 @@ func MessageRoute(g *fizz.RouterGroup) {
 		tonic.Handler(handlers.UnpinMessage, http.StatusNoContent),
 	)
 
+	// Record that the receiver opened a view-once attachment.
+	grp.POST(":id/open",
+		utils.CreateOperationOption(
+			"Mark a view-once attachment opened",
+			"Records that the receiver opened a view-once attachment and tells both participants through sync and a live open frame, so the message stays in the conversation as a tombstone. The view-once flag itself lives inside the ciphertext, so this is a client-reported state. Only the receiver may call it. Idempotent.",
+			[]int{
+				http.StatusBadRequest,
+				http.StatusUnauthorized,
+				http.StatusForbidden,
+				http.StatusNotFound,
+				http.StatusInternalServerError,
+			},
+			true),
+		tonic.Handler(handlers.OpenMessage, http.StatusNoContent),
+	)
+
 	// Hide one message for the calling account only.
 	grp.POST(":id/hide",
 		utils.CreateOperationOption(

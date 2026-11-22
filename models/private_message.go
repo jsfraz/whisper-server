@@ -37,9 +37,12 @@ type PrivateMessage struct {
 	ExpiresAt    time.Time       `json:"-"`
 	// TTLSeconds is the sender's requested lifetime. It is never stored:
 	// InsertMessage folds it into ExpiresAt.
-	TTLSeconds      int        `json:"-" gorm:"-"`
-	DeletedAt       *time.Time `json:"deletedAt"`
-	EditedAt        *time.Time `json:"editedAt"`
+	TTLSeconds int        `json:"-" gorm:"-"`
+	DeletedAt  *time.Time `json:"deletedAt"`
+	EditedAt   *time.Time `json:"editedAt"`
+	// OpenedAt is when the receiver opened a view-once attachment. The flag
+	// itself is inside the ciphertext, so the server only records the claim.
+	OpenedAt        *time.Time `json:"openedAt"`
 	RecipientOnline bool       `json:"recipientOnline" validate:"required" gorm:"-"`
 }
 

@@ -27,6 +27,7 @@ type MessageRow struct {
 	ReceiverId   string
 	SentAt       time.Time
 	DeletedAt    *time.Time
+	OpenedAt     *time.Time
 }
 
 // GetMessageRow loads one archived message, found=false when there is no such
@@ -39,9 +40,9 @@ type MessageRow struct {
 //	@return error
 func GetMessageRow(messageId string) (MessageRow, bool, error) {
 	var row MessageRow
-	err := utils.GetSingleton().Db.Raw(`SELECT id, seq, conversation, sender_id, receiver_id, sent_at, deleted_at
+	err := utils.GetSingleton().Db.Raw(`SELECT id, seq, conversation, sender_id, receiver_id, sent_at, deleted_at, opened_at
 		FROM messages WHERE id = ?`, messageId).Row().
-		Scan(&row.Id, &row.Seq, &row.Conversation, &row.SenderId, &row.ReceiverId, &row.SentAt, &row.DeletedAt)
+		Scan(&row.Id, &row.Seq, &row.Conversation, &row.SenderId, &row.ReceiverId, &row.SentAt, &row.DeletedAt, &row.OpenedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MessageRow{}, false, nil
 	}
@@ -163,9 +164,46 @@ func SetReaction(row MessageRow, actorId string, cipher *models.MessageCiphertex
 	return event, nil
 }
 
+// SetOpened records the instant the receiver opened a view-once attachment and
+// logs the event. A second call, or one on an already opened message, changes
+// nothing (changed=false) so a retry cannot append a duplicate entry.
+//
+//	@param row
+//	@param actorId
+//	@param now
+//	@return *models.MessageEvent
+//	@return bool
+//	@return error
+func SetOpened(row MessageRow, actorId string, now time.Time) (*models.MessageEvent, bool, error) {
+	var openedAt time.Time
+	err := utils.GetSingleton().Db.Raw(`UPDATE messages SET opened_at = ?
+		WHERE id = ? AND opened_at IS NULL RETURNING opened_at`, now, row.Id).
+		Row().Scan(&openedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	event := &models.MessageEvent{
+		MessageId:    row.Id,
+		MessageSeq:   row.Seq,
+		Conversation: row.Conversation,
+		SentAt:       row.SentAt,
+		Kind:         models.MessageEventOpen,
+		ActorId:      actorId,
+		OpenedAt:     &openedAt,
+		CreatedAt:    openedAt,
+	}
+	if err := insertEvent(utils.GetSingleton().Db, event); err != nil {
+		return nil, false, err
+	}
+	return event, true, nil
+}
+
 // SetPinned pins or unpins a message for both participants. It reports
 // changed=false when the message already was in that state, so a retry does not
-// append a duplicate log entry.
+// append a duplicate log entry.//
 //
 //	@param row
 //	@param actorId
