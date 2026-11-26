@@ -3,53 +3,72 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
+)
+
+const (
+	// wsReadTimeout is how long a connection may stay silent before it is
+	// considered dead. The client answers the server ping, which extends it.
+	wsReadTimeout = 60 * time.Second
+	// wsReadLimit bounds one inbound frame; the largest payload is an encrypted
+	// 25 MiB attachment envelope, which stays far below this.
+	wsReadLimit = 64 << 10
 )
 
 // Handles incoming WebSocket connections and their lifecycle
 //
 //	@param c
 func WebSocketHandler(c *gin.Context) {
-	// Get access token from request
-	accessToken := c.Query("wsAccessToken")
+	// The token belongs in the Authorization header: a URL query ends up in
+	// proxy access logs. The query is still read for older clients.
+	accessToken := utils.ExtractTokenFromContext(c)
 	if accessToken == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "wsAccessToken is required"})
+		accessToken = c.Query("wsAccessToken")
+	}
+	if accessToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorAccessTokenRequired})
 		slog.Warn("websocket auth missing token")
 		return
 	}
 	// Validate access token
-	userId, tokenId, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
+	claims, err := utils.TokenValid(accessToken, utils.GetSingleton().Config.WsAccessTokenSecret, utils.TokenTypeWs)
+	if err != nil || claims.TokenId == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorInvalidToken})
 		return
 	}
 	// Check if token exists in Valkey
-	exists, accessTokenById, err := database.WsAccessTokenExists(*tokenId)
+	exists, accessTokenById, err := database.WsAccessTokenExists(*claims.TokenId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
+		slog.Error("failed to load ws access token", "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		return
 	}
 	if !exists {
-		err = errors.New("access token not found")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorAccessTokenNotFound})
 		return
 	}
 	// Check if provided token and token from Valkey are the same
 	if accessToken != accessTokenById {
-		err = errors.New("access token mismatch")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		// log.Println(err.Error())
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorAccessTokenMismatch})
+		return
+	}
+	// A revoked device has no live socket, even with an unexpired ws token.
+	active, err := database.IsDeviceActive(claims.UserId, claims.DeviceId)
+	if err != nil {
+		slog.Error("failed to load device", "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
+		return
+	}
+	if !active {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": utils.ErrorDeviceRevoked})
 		return
 	}
 
@@ -60,15 +79,26 @@ func WebSocketHandler(c *gin.Context) {
 	// Upgrade HTTP connection to WebSocket
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		slog.Warn("ws upgrade failed", "error", utils.SanitizeLogValue(err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": utils.ErrorInternal})
 		return
 	}
 
-	// Create new WebSocket connection with topic subscription support
-	conn := &utils.WSConnection{
-		Conn:   ws,
-		UserId: userId,
+	// Bound the memory one client can make the server allocate, and drop
+	// connections that stop answering.
+	ws.SetReadLimit(wsReadLimit)
+	if err = ws.SetReadDeadline(time.Now().Add(wsReadTimeout)); err != nil {
+		_ = ws.Close()
+		return
 	}
+	ws.SetPongHandler(func(string) error {
+		return ws.SetReadDeadline(time.Now().Add(wsReadTimeout))
+	})
+
+	// Create new WebSocket connection, writing runs in its own goroutine so a
+	// stalled client can never block delivery.
+	conn := utils.NewWSConnection(ws, claims.UserId, claims.DeviceId)
+	go conn.WriteLoop()
 	// Register new connection with the hub
 	utils.GetSingleton().Hub.Register <- conn
 
@@ -77,7 +107,6 @@ func WebSocketHandler(c *gin.Context) {
 		// Ensure cleanup on connection close
 		defer func() {
 			utils.GetSingleton().Hub.Unregister <- conn
-			conn.Conn.Close()
 		}()
 
 		// Check if account should be deleted
@@ -90,28 +119,30 @@ func WebSocketHandler(c *gin.Context) {
 			return
 		}
 
-		// Send messages from cache
-		sendMessagesFromCache(conn)
+		// Nothing is pushed on connect: the client asks for its delta with a
+		// sync frame carrying its cursor, so a phone that was away for a week
+		// fetches only what it missed.
 
-		// Register custom validators
-		validator := validator.New()
-		validator.RegisterValidation("type", models.ValidateWsMessageType)
+		// One connection may not flood the shared server.
+		limiter := utils.NewMessageRateLimiter(utils.GetSingleton().Config.WsMessageRate)
 
 		for {
 			// Read and parse incoming message
 			messageType, payload, err := conn.Conn.ReadMessage()
 			if err != nil {
-				/*
-					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-						log.Println(err)
-					}
-				*/
 				return // Terminates goroutine on read error
+			}
+
+			// Flood protection: close the connection instead of buffering
+			// unbounded work for everyone.
+			if !limiter.Allow() {
+				conn.SendError(errors.New(utils.ErrorTooManyMessages))
+				return
 			}
 
 			// Check message type
 			if messageType != websocket.BinaryMessage {
-				err = errors.New("invalid message type, only binary messages are supported")
+				err = errors.New(utils.ErrorInvalidMessageType)
 				conn.SendError(err)
 				continue
 			}
@@ -120,42 +151,23 @@ func WebSocketHandler(c *gin.Context) {
 			var msg models.WsMessage
 			err = json.Unmarshal(payload, &msg)
 			if err != nil {
-				conn.SendError(err)
+				conn.SendError(errors.New(utils.ErrorInvalidMessage))
 				continue
 			}
 
 			// Validate message
-			err = validator.Struct(msg)
+			err = wsValidator.Struct(msg)
 			if err != nil {
-				conn.SendError(err)
+				conn.SendError(errors.New(utils.ErrorInvalidMessage))
 				continue
 			}
 
-			// Process message based on action type
-			utils.GetSingleton().Hub.Broadcast <- struct {
-				SenderId uint64
-				Message  models.WsMessage
-			}{
-				SenderId: conn.UserId,
-				Message:  msg,
-			}
+			// Archiving touches the database and a slow write must not stall
+			// the read loop of the other devices, so each frame is handled in
+			// its own goroutine.
+			go ProcessWsMessage(conn, msg)
 		}
 	}()
-}
-
-// Send messages from cache.
-func sendMessagesFromCache(conn *utils.WSConnection) {
-	// Get messages from cache
-	messages, err := database.GetUserPrivateMessages(conn.UserId)
-	if err != nil {
-		conn.SendError(err)
-		return
-	}
-	// Send messages
-	if len(*messages) > 0 {
-		response := models.NewWsResponse(models.WsResponseTypeMessages, messages)
-		conn.Send(response)
-	}
 }
 
 // Checks if user account should be deleted, sends delete message and deletes user.
@@ -178,12 +190,21 @@ func checkAccountDeletion(conn *utils.WSConnection) (bool, error) {
 		response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
 		conn.Send(response)
 		// Delete ID from Valkey
-		database.RemoveDeletedUserId(conn.UserId)
-		// Delete messages from Valkey
-		database.DeleteUserPrivateMessages(conn.UserId)
+		if err := database.RemoveDeletedUserId(conn.UserId); err != nil {
+			slog.Error("failed to clear deleted user id", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
+		// Delete messages from the archive
+		if err := database.DeleteUserMessages(conn.UserId); err != nil {
+			slog.Error("failed to delete user messages", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
+		// Delete devices
+		if err := database.DeleteUserDevices(conn.UserId); err != nil {
+			slog.Error("failed to delete user devices", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
 		// Delete media from server
-		database.DeleteUserMedia(conn.UserId)
-
+		if err := database.DeleteUserMedia(conn.UserId); err != nil {
+			slog.Error("failed to delete user media", "user_id", utils.SanitizeLogValue(conn.UserId), "error", utils.SanitizeLogValue(err.Error()))
+		}
 	}
 	return toDelete, nil
 }

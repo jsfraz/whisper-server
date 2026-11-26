@@ -1,24 +1,24 @@
-name: whisper-dev
+name: shept-dev
 
 services:
 
-  # whisper-server:
-  #   container_name: whisper-server-dev
+  # shept-server:
+  #   container_name: shept-server-dev
   #   # restart: always
   #   build: .
-  #   image: whisper-server
+  #   image: shept-server
   #   ports:
   #      - "8080:8080"
   #   volumes:
   #      - /etc/localtime:/etc/localtime:ro
   #      - ./data:/app/data
   #   depends_on:
-  #     - whisper-valkey
+  #     - shept-valkey
   #   environment:
   #    - GIN_MODE=debug
   #    - SERVER_URL=${SERVER_URL}
-  #    - SQLITE_PASSWORD=${SQLITE_PASSWORD}
-  #    - VALKEY_HOST=whisper-valkey-dev
+  #    - DATABASE_URL=postgres://shept:${POSTGRES_PASSWORD}@127.0.0.1:5432/shept?sslmode=disable
+  #    - VALKEY_HOST=shept-valkey-dev
   #    - VALKEY_PASSWORD=${VALKEY_PASSWORD}
   #    - ADMIN_MAIL=${ADMIN_MAIL}
   #    - SMTP_USER=${SMTP_USER}
@@ -28,14 +28,53 @@ services:
   #    - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
   #    - WS_ACCESS_TOKEN_SECRET=${WS_ACCESS_TOKEN_SECRET}
   
-  # TODO WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
-  whisper-valkey:
+  # Valkey needs vm.overcommit_memory=1 on the host, otherwise a background save (or
+  # replication) can fail under low memory. The setting is global to the kernel, not
+  # namespaced, so `sysctls:` cannot set it; this one-shot binds the host file and writes
+  # it without privileged mode. See docs/runbook.md if the host does not expose /proc/sys.
+  shept-valkey-sysctl:
     image: valkey/valkey:9-alpine
-    container_name: whisper-valkey-dev
+    container_name: shept-valkey-sysctl-dev
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 1 > /mnt/overcommit_memory && echo 'vm.overcommit_memory=1' || echo 'WARNING: could not set vm.overcommit_memory, set it on the host, see docs/runbook.md'"]
+    volumes:
+      # Bind the single sysctl file; runc refuses a bind mount inside /proc.
+      - /proc/sys/vm/overcommit_memory:/mnt/overcommit_memory
+
+  # Users, devices and the ciphertext archive. SQLite was only ever meant to
+  # hold accounts; history outgrew it.
+  shept-postgres:
+    image: postgres:17-alpine
+    container_name: shept-postgres-dev
+    environment:
+      - POSTGRES_DB=shept
+      - POSTGRES_USER=shept
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    # The server runs on the host during development (go run .), so the port is
+    # published on loopback only.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shept -d shept"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  shept-valkey:
+    image: valkey/valkey:9-alpine
+    container_name: shept-valkey-dev
     # restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning --notify-keyspace-events Ex"
+    # The server runs on the host during development (go run .), so the port is
+    # published on loopback only.
+    ports:
+      - "127.0.0.1:6379:6379"
     volumes:
       - valkey_data:/data
 
 volumes:
   valkey_data:
+  postgres_data:

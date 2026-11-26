@@ -1,6 +1,6 @@
 ---
 name: Security review
-description: Review an auth, crypto, media or session change in whisper-server for security regressions before merge.
+description: Review an auth, crypto, media or session change in shept-server for security regressions before merge.
 ---
 
 # Security review

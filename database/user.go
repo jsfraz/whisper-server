@@ -2,10 +2,13 @@ package database
 
 import (
 	"context"
-	"fmt"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
-	"strconv"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // Check if user exists by username.
@@ -15,11 +18,13 @@ import (
 //	@return error
 func UserExistsByUsername(username string) (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Where("username = ?", username).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	// A duplicate row must still count as taken; == 1 would report a taken name
+	// as free.
+	return count > 0, nil
 }
 
 // Insert user to database and delete invite code.
@@ -29,7 +34,7 @@ func UserExistsByUsername(username string) (bool, error) {
 //	@param inviteCode
 //	@return error
 func InsertUser(user *models.User, inviteCode string) error {
-	tx := utils.GetSingleton().Sqlite.Begin()
+	tx := utils.GetSingleton().Db.Begin()
 	err := tx.Create(&user).Error
 	if err != nil {
 		tx.Rollback()
@@ -49,11 +54,11 @@ func InsertUser(user *models.User, inviteCode string) error {
 //	@return error
 func AdminExists() (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Where("admin = ?", true).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	return count > 0, nil
 }
 
 // Check if user exists by ID.
@@ -61,13 +66,13 @@ func AdminExists() (bool, error) {
 //	@param userId
 //	@return bool
 //	@return error
-func UserExistsById(userId uint64) (bool, error) {
+func UserExistsById(userId string) (bool, error) {
 	var count int64
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
 	if err != nil {
 		return false, err
 	}
-	return count == 1, nil
+	return count > 0, nil
 }
 
 // Returns user by ID.
@@ -75,16 +80,16 @@ func UserExistsById(userId uint64) (bool, error) {
 //	@param userId
 //	@return *models.User
 //	@return error
-func GetUserById(userId uint64) (*models.User, error) {
+func GetUserById(userId string) (*models.User, error) {
 	toDelete, err := GetAllUsersToDelete()
 	if err != nil {
 		return nil, err
 	}
 	var user models.User
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Sqlite.Where("id = ? AND id NOT IN ?", userId, toDelete).First(&user).Error
+		err = utils.GetSingleton().Db.Where("id = ? AND id NOT IN ?", userId, toDelete).First(&user).Error
 	} else {
-		err = utils.GetSingleton().Sqlite.Where("id = ?", userId).First(&user).Error
+		err = utils.GetSingleton().Db.Where("id = ?", userId).First(&user).Error
 	}
 	if err != nil {
 		return nil, err
@@ -97,16 +102,16 @@ func GetUserById(userId uint64) (*models.User, error) {
 //	@param userId
 //	@return *[]models.User
 //	@return error
-func GetAllUsersExceptUser(userId uint64) (*[]models.User, error) {
+func GetAllUsersExceptUser(userId string) (*[]models.User, error) {
 	toDelete, err := GetAllUsersToDelete()
 	if err != nil {
 		return nil, err
 	}
 	var users []models.User = []models.User{}
 	if len(toDelete) != 0 {
-		err = utils.GetSingleton().Sqlite.Where("id != ? AND id NOT IN ?", userId, toDelete).Find(&users).Error
+		err = utils.GetSingleton().Db.Where("id != ? AND id NOT IN ?", userId, toDelete).Find(&users).Error
 	} else {
-		err = utils.GetSingleton().Sqlite.Where("id != ?", userId).Find(&users).Error
+		err = utils.GetSingleton().Db.Where("id != ?", userId).Find(&users).Error
 	}
 	if err != nil {
 		return nil, err
@@ -118,8 +123,8 @@ func GetAllUsersExceptUser(userId uint64) (*[]models.User, error) {
 //
 //	@param userId
 //	@return error
-func DeleteUserById(userId uint64) error {
-	return utils.GetSingleton().Sqlite.Where("id = ?", userId).Delete(&models.User{}).Error
+func DeleteUserById(userId string) error {
+	return utils.GetSingleton().Db.Where("id = ?", userId).Delete(&models.User{}).Error
 }
 
 // Checks if user with given ID is admin.
@@ -127,9 +132,9 @@ func DeleteUserById(userId uint64) error {
 //	@param userId
 //	@return bool
 //	@return error
-func IsAdmin(userId uint64) (bool, error) {
+func IsAdmin(userId string) (bool, error) {
 	var isAdmin bool
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Select("admin").Where("id = ?", userId).Scan(&isAdmin).Error
 	if err != nil {
 		return false, err
 	}
@@ -141,47 +146,49 @@ func IsAdmin(userId uint64) (bool, error) {
 //	@param userId
 //	@return string
 //	@return error
-func GetUserPublicKey(userId uint64) (string, error) {
+func GetUserPublicKey(userId string) (string, error) {
 	var publicKey string
-	err := utils.GetSingleton().Sqlite.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
+	err := utils.GetSingleton().Db.Model(&models.User{}).Select("public_key").Where("id = ?", userId).Scan(&publicKey).Error
 	if err != nil {
 		return "", err
 	}
 	return publicKey, nil
 }
 
-// Search users by username. Return all except the user.
+// Escape LIKE wildcards so user input is matched literally.
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
+}
+
+// Self-chat is a debug-only feature.
+func searchExcludesSelf() bool {
+	return utils.GetSingleton().Config.GinMode == "release"
+}
+
+// Search users by username. Return at most 50, except the user.
 //
 //	@param username
 //	@param userId
 //	@return *[]models.User
 //	@return error
-func SearchUsersByUsername(username string, userId uint64) (*[]models.User, error) {
+func SearchUsersByUsername(username string, userId string) (*[]models.User, error) {
 	toDelete, err := GetAllUsersToDelete()
 	if err != nil {
 		return nil, err
 	}
 	var users []models.User
 
-	skipUser := true
-	if utils.GetSingleton().Config.GinMode != "release" {
-		skipUser = false
+	query := utils.GetSingleton().Db.Model(&models.User{}).
+		Where("username LIKE ? ESCAPE '\\'", "%"+escapeLike(username)+"%")
+	if searchExcludesSelf() {
+		query = query.Where("id != ?", userId)
 	}
-
 	if len(toDelete) != 0 {
-		if skipUser {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ? AND id NOT IN ?", "%"+username+"%", userId, toDelete).Find(&users).Error
-		} else {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id NOT IN ?", "%"+username+"%", toDelete).Find(&users).Error
-		}
-	} else {
-		if skipUser {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ? AND id != ?", "%"+username+"%", userId).Find(&users).Error
-		} else {
-			err = utils.GetSingleton().Sqlite.Where("username LIKE ?", "%"+username+"%").Find(&users).Error
-		}
+		query = query.Where("id NOT IN ?", toDelete)
 	}
-	if err != nil {
+	if err = query.Order("username").Limit(50).Find(&users).Error; err != nil {
 		return nil, err
 	}
 	return &users, nil
@@ -191,41 +198,18 @@ func SearchUsersByUsername(username string, userId uint64) (*[]models.User, erro
 //
 //	@param ids
 //	@return error
-func PushUsersToDelete(ids []uint64) error {
+func PushUsersToDelete(ids []string) error {
 	client := utils.GetSingleton().Valkey
 	// Add all user IDs to the delete SET
-	members := make([]string, len(ids))
-	for i, userId := range ids {
-		members[i] = strconv.FormatUint(userId, 10)
-	}
-	if err := client.Do(context.Background(), client.B().Sadd().Key("del:users").Member(members...).Build()).Error(); err != nil {
+	if err := client.Do(context.Background(), client.B().Sadd().Key("del:users").Member(ids...).Build()).Error(); err != nil {
 		return err
 	}
-	// Delete messages for these users
+	invalidateToDeleteCache()
+	// The archive goes with the account: the ciphertext is useless without a
+	// recipient, and keeping it would outlive the deletion.
 	for _, userId := range ids {
-		// Use SCAN to find keys matching pattern
-		pattern := fmt.Sprintf("msg:%d_*", userId)
-		keys := []string{}
-
-		// Scan for matching keys
-		iter := client.B().Scan().Cursor(0).Match(pattern).Count(100).Build()
-		for {
-			result, err := client.Do(context.Background(), iter).AsScanEntry()
-			if err != nil {
-				return err
-			}
-			keys = append(keys, result.Elements...)
-			if result.Cursor == 0 {
-				break
-			}
-			iter = client.B().Scan().Cursor(result.Cursor).Match(pattern).Count(100).Build()
-		}
-
-		// Delete found keys in batches
-		if len(keys) > 0 {
-			if err := client.Do(context.Background(), client.B().Del().Key(keys...).Build()).Error(); err != nil {
-				return err
-			}
+		if err := DeleteUserMessages(userId); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -233,23 +217,56 @@ func PushUsersToDelete(ids []uint64) error {
 
 // Get all users to delete from SET.
 //
-//	@return []uint64
+// The answer is cached for a couple of seconds because it is read on every user
+// lookup, and a stale entry only delays a deletion confirmation.
+//
+//	@return []string
 //	@return error
-func GetAllUsersToDelete() ([]uint64, error) {
+func GetAllUsersToDelete() ([]string, error) {
+	toDeleteMu.Lock()
+	if time.Now().Before(toDeleteUntil) {
+		cached := toDeleteCache
+		toDeleteMu.Unlock()
+		return cached, nil
+	}
+	toDeleteMu.Unlock()
+
 	client := utils.GetSingleton().Valkey
 	members, err := client.Do(context.Background(), client.B().Smembers().Key("del:users").Build()).AsStrSlice()
 	if err != nil {
 		return nil, err
 	}
-	result := make([]uint64, 0, len(members))
+	result := make([]string, 0, len(members))
 	for _, m := range members {
-		id, err := strconv.ParseUint(m, 10, 64)
-		if err != nil {
+		if _, err := uuid.Parse(m); err != nil {
 			continue
 		}
-		result = append(result, id)
+		result = append(result, m)
 	}
+
+	toDeleteMu.Lock()
+	toDeleteCache = result
+	toDeleteUntil = time.Now().Add(toDeleteCacheTtl)
+	toDeleteMu.Unlock()
 	return result, nil
+}
+
+// toDeleteCacheTtl bounds how long a pending deletion may go unnoticed by the
+// read-only helpers.
+const toDeleteCacheTtl = 2 * time.Second
+
+var (
+	toDeleteMu    sync.Mutex
+	toDeleteCache []string
+	toDeleteUntil time.Time
+)
+
+// invalidateToDeleteCache makes the next read go to Valkey.
+func invalidateToDeleteCache() {
+	toDeleteMu.Lock()
+	toDeleteCache = nil
+	toDeleteUntil = time.Time{}
+	toDeleteMu.Unlock()
 }
 
 // Check if user is in to delete SET (O(1) lookup).
@@ -257,9 +274,9 @@ func GetAllUsersToDelete() ([]uint64, error) {
 //	@param userId
 //	@return bool
 //	@return error
-func WillUserBeDeleted(userId uint64) (bool, error) {
+func WillUserBeDeleted(userId string) (bool, error) {
 	client := utils.GetSingleton().Valkey
-	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).AsBool()
+	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(userId).Build()).AsBool()
 	if err != nil {
 		return false, err
 	}
@@ -270,7 +287,66 @@ func WillUserBeDeleted(userId uint64) (bool, error) {
 //
 //	@param userId
 //	@return error
-func RemoveDeletedUserId(userId uint64) error {
+func RemoveDeletedUserId(userId string) error {
 	client := utils.GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Srem().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).Error()
+	err := client.Do(context.Background(), client.B().Srem().Key("del:users").Member(userId).Build()).Error()
+	invalidateToDeleteCache()
+	return err
+}
+
+// GetUserRetentionDays returns the archive retention of a user in days.
+//
+//	@param userId
+//	@return int
+//	@return error
+func GetUserRetentionDays(userId string) (int, error) {
+	var days int
+	err := utils.GetSingleton().Db.Model(&models.User{}).
+		Select("retention_days").Where("id = ?", userId).Scan(&days).Error
+	if err != nil {
+		return 0, err
+	}
+	if days == 0 {
+		days = models.DefaultRetentionDays
+	}
+	return days, nil
+}
+
+// SetUserRetentionDays stores the archive retention of a user.
+//
+//	@param userId
+//	@param days
+//	@return error
+func SetUserRetentionDays(userId string, days int) error {
+	return utils.GetSingleton().Db.Model(&models.User{}).
+		Where("id = ?", userId).Update("retention_days", days).Error
+}
+
+// GetRetentionDaysOf returns the retention both participants agreed to: the
+// shorter setting wins, because both accounts can read the message.
+//
+//	@param firstId
+//	@param secondId
+//	@return int
+//	@return error
+func GetRetentionDaysOf(firstId string, secondId string) (int, error) {
+	var rows []struct {
+		Id            string
+		RetentionDays int
+	}
+	err := utils.GetSingleton().Db.Model(&models.User{}).
+		Select("id, retention_days").Where("id IN ?", []string{firstId, secondId}).
+		Scan(&rows).Error
+	if err != nil {
+		return 0, err
+	}
+	days := map[string]int{}
+	for _, row := range rows {
+		value := row.RetentionDays
+		if value == 0 {
+			value = models.DefaultRetentionDays
+		}
+		days[row.Id] = value
+	}
+	return ShortestRetention(days[firstId], days[secondId]), nil
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/asaskevich/govalidator"
 	"github.com/kelseyhightower/envconfig"
@@ -19,8 +20,13 @@ type Config struct {
 	// Server URL
 	ServerUrl string `envconfig:"SERVER_URL" required:"true"`
 
-	// SQLite
-	SqlitePassword string `envconfig:"SQLITE_PASSWORD" required:"true"`
+	// PostgreSQL DSN (users, devices, ciphertext archive)
+	DatabaseUrl string `envconfig:"DATABASE_URL" required:"true"`
+
+	// Oldest client the server still accepts at login. A client that reports an
+	// older version is refused with clientVersionUnsupported instead of failing
+	// later in a way nobody can explain.
+	MinClientVersion string `envconfig:"MIN_CLIENT_VERSION" default:"0.1.0"`
 
 	// Valkey
 	ValkeyHost     string `envconfig:"VALKEY_HOST" required:"true"`
@@ -54,17 +60,50 @@ type Config struct {
 	WsAccessTokenSecret   string `envconfig:"WS_ACCESS_TOKEN_SECRET" required:"true"`
 	WsAccessTokenLifespan int    `envconfig:"WS_ACCESS_TOKEN_LIFESPAN" default:"10"` // Default 10 (10 seconds)
 
-	// Message TTL
-	MessageTtl int `envconfig:"MESSAGE_TTL" default:"2592000"` // Default 2592000 (30 days)
-
-	// Media TTL (should be >= MessageTtl so offline recipients can still fetch referenced media)
+	// Media TTL (kept at least as long as the archive retention so a device that
+	// was away can still fetch the media of its history)
 	MediaTtl int `envconfig:"MEDIA_TTL" default:"2592000"` // Default 2592000 (30 days)
 
 	// Maximum allowed upload size for a single media file in bytes
-	MediaMaxUploadSize int64 `envconfig:"MEDIA_MAX_UPLOAD_SIZE" default:"26214400"` // Default 26214400 (25 MiB)
+	MediaMaxUploadSize int64 `envconfig:"MEDIA_MAX_UPLOAD_SIZE" default:"104857600"` // Default 104857600 (100 MiB)
+
+	// How long a chunked upload may stay unfinished before its partial bytes are
+	// swept. The client can resume within this window.
+	MediaUploadTtl int `envconfig:"MEDIA_UPLOAD_TTL" default:"86400"` // Default 86400 (24 hours)
 
 	// Directory where encrypted media files are stored
 	MediaDir string `envconfig:"MEDIA_DIR" default:"data/media"` // Default data/media
+
+	// Per client IP rate limit for the expensive endpoints (register, login,
+	// refresh, upload). Burst is the bucket size, refill the rate afterwards.
+	RateLimitBurst     int `envconfig:"RATE_LIMIT_BURST" default:"20"`
+	RateLimitPerMinute int `envconfig:"RATE_LIMIT_PER_MINUTE" default:"60"`
+
+	// Comma separated proxies whose X-Forwarded-For header is trusted when the
+	// client IP is resolved. Only private networks by default: the reverse proxy
+	// runs inside them, and a public client can never inject its own address.
+	TrustedProxies string `envconfig:"TRUSTED_PROXIES" default:"127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"`
+
+	// Stops one account from exhausting shared storage.
+	MediaMaxPerUser int `envconfig:"MEDIA_MAX_PER_USER" default:"200"`
+
+	// WebSocket messages accepted from one connection per second.
+	WsMessageRate int `envconfig:"WS_MESSAGE_RATE" default:"20"`
+}
+
+// TrustedProxyList returns the configured proxies as a slice, ready for
+// gin.Engine.SetTrustedProxies.
+//
+//	@return []string
+func (c Config) TrustedProxyList() []string {
+	proxies := []string{}
+	for _, proxy := range strings.Split(c.TrustedProxies, ",") {
+		proxy = strings.TrimSpace(proxy)
+		if proxy != "" {
+			proxies = append(proxies, proxy)
+		}
+	}
+	return proxies
 }
 
 // Loads config from environmental values.

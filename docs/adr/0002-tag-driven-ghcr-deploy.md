@@ -7,7 +7,7 @@ Deploys ran on every push to `main` and rebuilt on the VPS: no immutable
 artifact, no rollback target, and a broken build could reach production.
 
 ## Decision
-A `v*` tag builds `ghcr.io/jsfraz/whisper-server:<tag>` (linux/amd64). Deploy
+A `v*` tag builds `ghcr.io/jsfraz/shept-server:<tag>` (linux/amd64). Deploy
 runs after a successful Release or manually with a tag, pulls the image, waits
 for the health check, and rolls back to the previous tag on failure. The image
 package is public, so the VPS needs no registry credentials.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 
 	"github.com/google/uuid"
 )

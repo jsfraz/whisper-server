@@ -2,14 +2,18 @@ package handlers
 
 import (
 	"errors"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
 	"net/http"
 	"time"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/gin-gonic/gin"
 )
+
+// maxActiveInvites caps how many unused invites may exist at once.
+const maxActiveInvites = 100
 
 // CreateInvite
 //
@@ -19,12 +23,26 @@ import (
 func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		return c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to create invites"))
+		return c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorNotAuthorized))
+	}
+	// An invite is sent to this address, so a typo is a bounced mail from our
+	// own domain.
+	if !govalidator.IsEmail(request.Mail) {
+		return c.AbortWithError(http.StatusBadRequest, errors.New(utils.ErrorInvalidEmailAddress))
+	}
+	// Cap the number of live invites: an abused admin token must not turn the
+	// server into an open relay for mail.
+	active, err := database.GetAllInvites()
+	if err != nil {
+		return c.AbortWithError(http.StatusInternalServerError, err)
+	}
+	if len(*active) >= maxActiveInvites {
+		return c.AbortWithError(http.StatusTooManyRequests, errors.New(utils.ErrorTooManyActiveInvites))
 	}
 	// Create invite
 	ttl := utils.GetSingleton().Config.InviteTtl
@@ -47,12 +65,12 @@ func CreateInvite(c *gin.Context, request *models.CreateUser) error {
 func GetAllInvites(c *gin.Context) (*[]models.Invite, error) {
 	userId, _ := c.Get("userId")
 	// Check if user is admin
-	admin, err := database.IsAdmin(userId.(uint64))
+	admin, err := database.IsAdmin(userId.(string))
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if !admin {
-		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New("not authorized to get invites"))
+		return nil, c.AbortWithError(http.StatusUnauthorized, errors.New(utils.ErrorNotAuthorized))
 	}
 	// Get invites
 	invites, err := database.GetAllInvites()

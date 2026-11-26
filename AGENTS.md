@@ -1,7 +1,7 @@
-# whisper-server — agent contract
+# shept-server — agent contract
 
-Go 1.27 / Gin API for the Whisper messenger: SQLite+SQLCipher (GORM), Valkey, WebSocket, Firebase push.
-Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `openapi.json`), `whisper_websocket_client_dart`.
+Go 1.27 / Gin API for the Shept messenger: PostgreSQL (GORM), Valkey, WebSocket, Firebase push.
+Clients: `shept` (Flutter), `shept_openapi_client_dart` (generated from `openapi.json`), `shept_websocket_client_dart`.
 
 ## Commands
 
@@ -12,11 +12,16 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 - spec: `go run ./cmd/spec` — rewrites `openapi.json`; must be part of every commit that changes routes or models
 - locally: `docker compose -f docker-compose.dev.yml up -d` (Valkey) + env from `.env.dev`, then `go run .`
 
+## AI / MCP tooling
+
+`gopls mcp` is wired in the global OpenCode config (`~/.config/opencode/opencode.json`) as the
+`golang` server: go-to-definition, references, diagnostics, tests. Full server list in the README.
+
 ## Hard rules
 
 1. Never commit secrets, keys, `.env*` or Firebase credentials.
 2. `openapi.json` is a versioned artifact. Do not generate it with `wget` against a running server — only `go run ./cmd/spec`, so the output stays deterministic.
-3. Never edit `whisper_openapi_client_dart/lib` by hand. A contract change means: change the spec here, regenerate the client, bump the version in `whisper/pubspec.yaml`, all in one sequence.
+3. Never edit `shept_openapi_client_dart/lib` by hand. A contract change means: change the spec here, regenerate the client, bump the version in `shept/pubspec.yaml`, all in one sequence.
 4. Do not weaken auth or encryption, not even "temporarily for debugging" (CORS, `CheckOrigin`, token validation).
 5. Do not add a dependency without justification in the PR.
 6. Do not change the DB schema without a migration (goose, in `database/migrations/`) and do not change a Valkey payload without the `v` field.
@@ -29,6 +34,18 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 - **Media endpoints** (`POST /api/media`, `GET /api/media/{id}`) are raw Gin handlers (multipart, streamed response). Fizz cannot describe them, so their OpenAPI operations are hand-written in `routes/media_openapi.go` (see the `shortcut:` comment). When you change a media handler, update that file too, otherwise client and server drift apart.
 - **Binary responses**: the client generator maps them to `MultipartFile`, so the download is handled by the hand-written `lib/media_download.dart`, not by the generated `downloadMedia`.
 - **The server only ever holds ciphertext.** Never log message content, media or keys.
+- **Login flow:** `POST /api/auth` only accepts a JWT whose `nonce` claim is a
+  live `GET /api/auth/challenge` value (spent on use). Adding or removing a claim
+  there breaks every client; the E2E test "the login token is single use" locks it.
+- **Limits are part of the contract:** `MEDIA_MAX_PER_USER` and
+  `WS_MESSAGE_RATE` are the only thing keeping one account from exhausting
+  shared storage; do not raise them without a replacement.
+- **Client IP:** only `TRUSTED_PROXIES` may set `X-Forwarded-For`. Without that
+  the per IP rate limit is bypassable, so never call `SetTrustedProxies(nil)`.
+- **Archive contract:** one ciphertext row per message is history, offline
+  buffer and delta source. A client resends the same `(sender, receiver, sentAt)`
+  and must keep one row; the E2E test "a resent message is archived once" locks
+  it. Delivery is a `sync` frame with the client's last `seq`, never a full dump.
 
 ## Definition of done
 

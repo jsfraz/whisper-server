@@ -1,10 +1,10 @@
-# whisper-server
+# shept-server
 
 Secure private self-hosted messaging server using end-to-end encryption.
 
-For Whisper app, see [whisper](https://github.com/jsfraz/whisper) repository.
+For Shept app, see [shept](https://github.com/jsfraz/shept) repository.
 
-Also see [Wiki](https://github.com/jsfraz/whisper-server/wiki)!
+Also see [Wiki](https://github.com/jsfraz/shept-server/wiki)!
 
 ## Architecture and operations
 
@@ -12,6 +12,16 @@ Also see [Wiki](https://github.com/jsfraz/whisper-server/wiki)!
 - [Threat model](docs/threat-model.md) - STRIDE for auth/WS and media
 - [Runbook](docs/runbook.md) - restart, rollback, secret rotation
 - [ADRs](docs/adr/README.md) - accepted decisions
+
+## AI / MCP tooling
+
+Developed with [OpenCode](https://opencode.ai); MCP servers live in the global config
+`~/.config/opencode/opencode.json`, not in this repository.
+
+- `golang` (`gopls mcp`) — Go diagnostics, symbol resolution, tests
+- `context7` — library documentation lookup
+- `dart` — only relevant when working on the Dart clients in the sibling repositories
+  (see the `shept` app README for the full setup)
 
 ## Development
 
@@ -25,7 +35,8 @@ sudo docker compose -f docker-compose.dev.yml --env-file .env.dev up -d
 | --- | --- | --- | --- |
 | GIN_MODE | Gin framework and entire application mode (debug or release) | No | debug |
 | SERVER_URL | Server URL | Yes | - |
-| SQLITE_PASSWORD | Password for the SQLite database | Yes | - |
+| DATABASE_URL | PostgreSQL DSN (users, devices and the ciphertext archive) | Yes | - |
+| POSTGRES_PASSWORD | Password of the bundled PostgreSQL service (docker compose) | Yes | - |
 | VALKEY_HOST | Valkey host | Yes | - |
 | VALKEY_PORT | Valkey port | No | 6379 |
 | VALKEY_PASSWORD | Password for Valkey | Yes | - |
@@ -42,7 +53,19 @@ sudo docker compose -f docker-compose.dev.yml --env-file .env.dev up -d
 | REFRESH_TOKEN_LIFESPAN | Refresh token lifespan (in seconds) | No | 604800 (7 days) |
 | WS_ACCESS_TOKEN_SECRET | Secret key for short-lived WebSocket access token | Yes | - |
 | WS_ACCESS_TOKEN_LIFESPAN | WebSocket access token lifetime (in seconds) | No | 10 (10 seconds) |
-| MESSAGE_TTL | Message retention time (in seconds) | No | 2592000 (30 days) |
+| RATE_LIMIT_BURST | Per client IP bucket size for register, auth, refresh and upload | No | 20 |
+| RATE_LIMIT_PER_MINUTE | Per client IP refill rate for those endpoints | No | 60 |
+| TRUSTED_PROXIES | Comma separated proxies whose `X-Forwarded-For` is trusted | No | `127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` |
+| MEDIA_MAX_PER_USER | Pending encrypted media files per account | No | 200 |
+| WS_MESSAGE_RATE | WebSocket messages accepted per connection per second | No | 20 |
+| MIN_CLIENT_VERSION | Oldest client the login accepts | No | 0.1.0 |
+
+### Storage
+
+PostgreSQL holds the accounts, the device registry and the ciphertext archive
+(history plus the offline delivery buffer). Valkey holds short-lived state only:
+invites, WS tokens, refresh sessions, media metadata and push targets. The
+server never writes plaintext to either.
 
 ### Firebase
 
@@ -74,13 +97,13 @@ The deploy workflow also writes `.env.prod` on the VPS from repository secrets. 
 | Secret | Description |
 | --- | --- |
 | `SERVER_URL` | Public server URL |
-| `SQLITE_PASSWORD` | SQLCipher database password |
+| `POSTGRES_PASSWORD` | PostgreSQL password (also part of `DATABASE_URL`) |
 | `VALKEY_PASSWORD` | Valkey password |
 | `ADMIN_MAIL` | Administrator email address |
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` | Outgoing mail credentials |
 | `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET`, `WS_ACCESS_TOKEN_SECRET` | JWT signing secrets |
 
-Variables with defaults (`ADMIN_INVITE_TTL`, `INVITE_TTL`, token lifespans, `MESSAGE_TTL`, `MEDIA_TTL`, `MEDIA_MAX_UPLOAD_SIZE`, `MEDIA_DIR`, `SMTP_PORT`, `VALKEY_PORT`, `GIN_MODE`) are not passed by the workflow; set them in `docker-compose.prod.yml` if you need to override a default.
+Variables with defaults (`ADMIN_INVITE_TTL`, `INVITE_TTL`, token lifespans, `MEDIA_TTL`, `MEDIA_MAX_UPLOAD_SIZE`, `MEDIA_DIR`, `SMTP_PORT`, `VALKEY_PORT`, `GIN_MODE`) are not passed by the workflow; set them in `docker-compose.prod.yml` if you need to override a default.
 
 
 To get `FIREBASE_JSON_BASE64`, run:
@@ -106,4 +129,4 @@ To get `FIREBASE_JSON_BASE64`, run:
 
 ### Reverse proxy
 
-For deploying behind a reverse proxy see [nginx configuration](whisper.conf).
+For deploying behind a reverse proxy see [nginx configuration](shept.conf).

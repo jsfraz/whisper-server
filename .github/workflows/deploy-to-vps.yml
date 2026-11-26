@@ -34,7 +34,7 @@ jobs:
         env:
           PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
           SERVER_URL: ${{ secrets.SERVER_URL }}
-          SQLITE_PASSWORD: ${{ secrets.SQLITE_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           VALKEY_PASSWORD: ${{ secrets.VALKEY_PASSWORD }}
           ADMIN_MAIL: ${{ secrets.ADMIN_MAIL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -49,11 +49,11 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          envs: IMAGE_TAG,PROJECT_PATH,SERVER_URL,SQLITE_PASSWORD,VALKEY_PASSWORD,ADMIN_MAIL,SMTP_HOST,SMTP_USER,SMTP_PASSWORD,ACCESS_TOKEN_SECRET,REFRESH_TOKEN_SECRET,WS_ACCESS_TOKEN_SECRET,FIREBASE_JSON_BASE64
+          envs: IMAGE_TAG,PROJECT_PATH,SERVER_URL,POSTGRES_PASSWORD,VALKEY_PASSWORD,ADMIN_MAIL,SMTP_HOST,SMTP_USER,SMTP_PASSWORD,ACCESS_TOKEN_SECRET,REFRESH_TOKEN_SECRET,WS_ACCESS_TOKEN_SECRET,FIREBASE_JSON_BASE64
           script: |
             set -euo pipefail
 
-            ACTUAL_PATH="$PROJECT_PATH/whisper-server"
+            ACTUAL_PATH="$PROJECT_PATH/shept-server"
             if [ -d "$ACTUAL_PATH/.git" ]; then
               cd "$ACTUAL_PATH"
               git fetch --tags --prune origin
@@ -61,7 +61,7 @@ jobs:
               mkdir -p "$ACTUAL_PATH"
               cd "$ACTUAL_PATH"
               git init
-              git remote add origin https://github.com/jsfraz/whisper-server.git
+              git remote add origin https://github.com/jsfraz/shept-server.git
               git fetch --tags origin
             fi
             # Use the compose file from the tag being deployed.
@@ -70,7 +70,7 @@ jobs:
             mkdir -p data
             {
               printf 'SERVER_URL=%s\n' "$SERVER_URL"
-              printf 'SQLITE_PASSWORD=%s\n' "$SQLITE_PASSWORD"
+              printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
               printf 'VALKEY_PASSWORD=%s\n' "$VALKEY_PASSWORD"
               printf 'ADMIN_MAIL=%s\n' "$ADMIN_MAIL"
               printf 'SMTP_HOST=%s\n' "$SMTP_HOST"
@@ -82,15 +82,15 @@ jobs:
             } > .env.prod
             printf '%s' "$FIREBASE_JSON_BASE64" | base64 --decode > data/firebase.json
 
-            PREVIOUS_TAG="$(cat .whisper-image-tag 2>/dev/null || true)"
+            PREVIOUS_TAG="$(cat .shept-image-tag 2>/dev/null || true)"
 
             deploy() {
-              export WHISPER_IMAGE_TAG="$1"
-              echo "Deploying $WHISPER_IMAGE_TAG"
-              docker compose -f docker-compose.prod.yml --env-file .env.prod pull whisper-server
+              export SHEPT_IMAGE_TAG="$1"
+              echo "Deploying $SHEPT_IMAGE_TAG"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod pull shept-server
               docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
               for _ in $(seq 1 36); do
-                status="$(docker inspect -f '{{.State.Health.Status}}' whisper-server 2>/dev/null || echo starting)"
+                status="$(docker inspect -f '{{.State.Health.Status}}' shept-server 2>/dev/null || echo starting)"
                 case "$status" in
                   healthy) return 0 ;;
                   unhealthy) return 1 ;;
@@ -101,7 +101,7 @@ jobs:
             }
 
             if deploy "$IMAGE_TAG"; then
-              printf '%s\n' "$IMAGE_TAG" > .whisper-image-tag
+              printf '%s\n' "$IMAGE_TAG" > .shept-image-tag
             else
               echo "Deploy of $IMAGE_TAG failed"
               if [ -n "$PREVIOUS_TAG" ]; then

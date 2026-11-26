@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"errors"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 
 	"github.com/valkey-io/valkey-go"
 )

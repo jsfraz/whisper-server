@@ -4,9 +4,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/routes"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/routes"
+	"jsfraz/shept-server/utils"
 	"log"
 	"net/http"
 	"os"
@@ -27,7 +27,7 @@ var registerInviteTemplate string
 
 func main() {
 	// Log settings
-	log.SetPrefix("whisper: ")
+	log.SetPrefix("shept: ")
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
 	log.Printf("starting on %s...", addr)
@@ -49,8 +49,8 @@ func main() {
 	singleton.RegisterAdminTemplate = registerAdminTemplate
 	singleton.RegisterInviteTemplate = registerInviteTemplate
 
-	// Setup SQLite
-	database.InitSqlite()
+	// Setup PostgreSQL
+	database.InitDb()
 	// Setup Valkey
 	database.InitValkey()
 
@@ -98,6 +98,15 @@ func main() {
 	go func() {
 		database.SubscribeExpiredMedia()
 	}()
+
+	// Reconcile media files whose expiry notification was missed (restart, crash, outage)
+	go database.RunMediaSweeper(10 * time.Minute)
+
+	// Delete archived ciphertext past its retention. The archive is also the
+	// offline buffer, so this is the only thing that bounds it.
+	// Five minutes, not an hour: a disappearing message carries its own
+	// expiry, so a slow sweep would keep the ciphertext long past its promise.
+	go database.RunMessageSweeper(5 * time.Minute)
 
 	// Create admin invite if admin does not exist
 	err = database.CreateAdminInvite()

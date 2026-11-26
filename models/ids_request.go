@@ -1,5 +1,5 @@
 package models
 
 type IdsRequest struct {
-	Ids []uint64 `json:"ids" validate:"required"`
+	Ids []string `json:"ids" validate:"required,dive,uuid"`
 }

@@ -1,31 +1,16 @@
 package utils
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"jsfraz/whisper-server/models"
-	"log/slog"
-	"slices"
-	"strconv"
+	"jsfraz/shept-server/models"
 	"sync"
-
-	messaging "firebase.google.com/go/v4/messaging"
-	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 )
 
-// Hub manages WebSocket connections and message broadcasting
+// Hub is the registry of live WebSocket connections. It holds no database
+// state: validation, archiving and push live in the handlers, so this package
+// never has to import the storage layer.
 type Hub struct {
 	// Map of active WebSocket connections and their status
 	Connections map[*WSConnection]bool
-	// Channel for broadcasting messages to all subscribed connections
-	// Anonymous struct is here for pairing senderId and message
-	Broadcast chan struct {
-		SenderId uint64
-		Message  models.WsMessage
-	}
 	// Channel for registering new WebSocket connections
 	Register chan *WSConnection
 	// Channel for unregistering (removing) WebSocket connections
@@ -40,16 +25,15 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		Connections: make(map[*WSConnection]bool),
-		Broadcast: make(chan struct {
-			SenderId uint64
-			Message  models.WsMessage
-		}),
-		Register:   make(chan *WSConnection),
-		Unregister: make(chan *WSConnection),
+		Register:    make(chan *WSConnection, 16),
+		Unregister:  make(chan *WSConnection, 16),
 	}
 }
 
-// Run starts the Hub's main event loop to handle connections and messages
+// Run starts the Hub's main event loop to handle connections.
+//
+// Nothing in here may hold the connection map lock across network I/O: a single
+// slow client would otherwise stop delivery for every user.
 func (h *Hub) Run() {
 	for {
 		select {
@@ -64,197 +48,106 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			delete(h.Connections, conn)
 			h.mu.Unlock()
-
-		// Handle incoming message
-		case msgSenderPair := <-h.Broadcast:
-			h.mu.RLock()
-
-			switch msgSenderPair.Message.Type {
-
-			// Private message
-			case models.WsMessageTopicMessage:
-				// Unmarshall private message
-				var privateMessage models.NewPrivateMessageReceive
-				err := json.Unmarshal(msgSenderPair.Message.Payload, &privateMessage)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Validate private message
-				validator := validator.New()
-				err = validator.Struct(privateMessage)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Check whether user is sending message to self (in production)
-				if msgSenderPair.SenderId == privateMessage.ReceiverId && GetSingleton().Config.GinMode == "release" {
-					err = errors.New("can not send message to self")
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Check if message is being sent to user that will be deleted
-				toDelete, err := h.willUserBeDeleted(privateMessage.ReceiverId)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				if toDelete {
-					err = errors.New("can not send message to this user")
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				// Check if user exists
-				exists, err := h.userExistsById(privateMessage.ReceiverId)
-				if err != nil {
-					h.sendError(msgSenderPair.SenderId, err)
-					h.mu.RUnlock()
-					continue
-				}
-				if !exists {
-					h.sendError(msgSenderPair.SenderId, errors.New("user does not exist"))
-					h.mu.RUnlock()
-					continue
-				}
-				// Send message to connected client with receiverId
-				online := false
-				pm := models.NewPrivateMessage(msgSenderPair.SenderId, privateMessage.Content, privateMessage.Key, privateMessage.Nonce, privateMessage.Mac, privateMessage.SentAt, false)
-				for conn := range h.Connections {
-					if conn.UserId == privateMessage.ReceiverId {
-						online = true
-						pm.RecipientOnline = true
-						conn.Send(models.NewWsResponse(models.WsResponseTypeMessages, []models.PrivateMessage{pm}))
-						break
-					}
-				}
-				if !online {
-					// Push message to Valkey
-					h.pushMessage(privateMessage.ReceiverId, pm, GetSingleton().Config.MessageTtl)
-
-					// Send push notification
-					if err := h.SendPushNotification(privateMessage.ReceiverId, "New message", "You have a new message"); err != nil {
-						slog.Warn("failed to send push notification",
-							"user_id", SanitizeLogValue(strconv.FormatUint(privateMessage.ReceiverId, 10)),
-							"error", SanitizeLogValue(err.Error()))
-					}
-				}
-			}
-
-			h.mu.RUnlock()
+			conn.Close()
 		}
 	}
 }
 
-// Send error response to sender
+// ConnectionOf returns the live connection of one device, if any.
 //
-//	@param senderId
-//	@param err
-func (h *Hub) sendError(senderId uint64, err error) {
+//	@param userId
+//	@param deviceId
+//	@return *WSConnection
+func (h *Hub) ConnectionOf(userId string, deviceId string) *WSConnection {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	for conn := range h.Connections {
-		if conn.UserId == senderId {
-			conn.SendError(err)
-			break
+		if conn.UserId == userId && conn.DeviceId == deviceId {
+			return conn
 		}
-	}
-}
-
-// Check if user exists by ID.
-//
-//	@param userId
-//	@return bool
-//	@return error
-func (h *Hub) userExistsById(userId uint64) (bool, error) {
-	var count int64
-	err := GetSingleton().Sqlite.Model(&models.User{}).Where("id = ?", userId).Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count == 1, nil
-}
-
-// Push PrivateMessage to Valkey.
-//
-//	@param receiverId
-//	@param message
-//	@param ttl
-//	@return error
-func (h *Hub) pushMessage(receiverId uint64, message models.PrivateMessage, ttl int) error {
-	// Marshall JSON
-	m, err := message.MarshalBinary()
-	if err != nil {
-		return err
-	}
-	// Push
-	client := GetSingleton().Valkey
-	return client.Do(context.Background(), client.B().Set().Key(fmt.Sprintf("msg:%d_%s", receiverId, uuid.New().String())).Value(string(m)).ExSeconds(int64(ttl)).Build()).Error()
-}
-
-// Check if user with given ID will be deleted (O(1) with SET).
-//
-//	@param userId
-//	@return bool
-//	@return error
-func (h *Hub) willUserBeDeleted(userId uint64) (bool, error) {
-	client := GetSingleton().Valkey
-	result, err := client.Do(context.Background(), client.B().Sismember().Key("del:users").Member(strconv.FormatUint(userId, 10)).Build()).AsBool()
-	if err != nil {
-		return false, err
-	}
-	return result, nil
-}
-
-// Deletes users and sends delete message. Returns slice of online users that have been deleted.
-//
-//	@param ids
-func (h *Hub) DeleteUsers(ids []uint64) []uint64 {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var online []uint64 = []uint64{}
-	for conn := range h.Connections {
-		// Find online user
-		if slices.Contains(ids, conn.UserId) {
-			// Delete user
-			err := GetSingleton().Sqlite.Where("id = ?", conn.UserId).Delete(&models.User{}).Error
-			if err != nil {
-				continue
-			}
-			online = append(online, conn.UserId)
-			// Send delete message
-			response := models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil)
-			conn.Send(response)
-		}
-	}
-	return online
-}
-
-// SendPushNotification
-//
-//	@param userId
-//	@param title
-//	@param body
-//	@return error
-func (h *Hub) SendPushNotification(userId uint64, title, body string) error {
-	client := GetSingleton().Valkey
-	// Get token by userId
-	token, err := client.Do(context.Background(), client.B().Get().Key(fmt.Sprintf("fcm:%d", userId)).Build()).AsBytes()
-	if err != nil {
-		return fmt.Errorf("failed to get token for user %d: %w", userId, err)
-	}
-	// Send push notification
-	_, err = GetSingleton().FirebaseMsg.Send(context.Background(), &messaging.Message{
-		Notification: &messaging.Notification{
-			Title: title,
-			Body:  body,
-		},
-		Token: string(token),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to send push notification to user %d: %w", userId, err)
 	}
 	return nil
+}
+
+// ConnectionsOf returns every live connection of a user (one per device).
+//
+//	@param userId
+//	@return []*WSConnection
+func (h *Hub) ConnectionsOf(userId string) []*WSConnection {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	conns := []*WSConnection{}
+	for conn := range h.Connections {
+		if conn.UserId == userId {
+			conns = append(conns, conn)
+		}
+	}
+	return conns
+}
+
+// Online reports whether at least one device of a user is connected.
+//
+//	@param userId
+//	@return bool
+func (h *Hub) Online(userId string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for conn := range h.Connections {
+		if conn.UserId == userId {
+			return true
+		}
+	}
+	return false
+}
+
+// SendToUser hands a response to every live device of a user.
+//
+//	@param userId
+//	@param response
+func (h *Hub) SendToUser(userId string, response models.WsResponse) {
+	for _, conn := range h.ConnectionsOf(userId) {
+		conn.Send(response)
+	}
+}
+
+// CloseDevice drops every socket of one device. A revoked device must not keep
+// receiving messages until its token happens to expire.
+//
+//	@param userId
+//	@param deviceId
+//	@param reason
+func (h *Hub) CloseDevice(userId string, deviceId string, reason string) {
+	h.mu.RLock()
+	conns := []*WSConnection{}
+	for conn := range h.Connections {
+		if conn.UserId == userId && conn.DeviceId == deviceId {
+			conns = append(conns, conn)
+		}
+	}
+	h.mu.RUnlock()
+	for _, conn := range conns {
+		if reason != "" {
+			conn.Send(models.NewWsResponse(models.WsResponseTypeError, reason))
+		}
+		conn.Close()
+	}
+}
+
+// CloseUser tells every device of a user that the account is gone, then drops
+// the sockets.
+//
+//	@param userId
+func (h *Hub) CloseUser(userId string) {
+	h.mu.RLock()
+	conns := []*WSConnection{}
+	for conn := range h.Connections {
+		if conn.UserId == userId {
+			conns = append(conns, conn)
+		}
+	}
+	h.mu.RUnlock()
+	for _, conn := range conns {
+		conn.Send(models.NewWsResponse(models.WsResponseTypeDeleteAccount, nil))
+		conn.Close()
+	}
 }

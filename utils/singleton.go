@@ -18,7 +18,7 @@ var (
 
 type Singleton struct {
 	Config                 Config
-	Sqlite                 *gorm.DB
+	Db                     *gorm.DB
 	Valkey                 valkey.Client
 	FirebaseMsg            *messaging.Client
 	Hub                    *Hub

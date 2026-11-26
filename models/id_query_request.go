@@ -1,5 +1,5 @@
 package models
 
 type IdQueryRequest struct {
-	Id uint64 `query:"id" validate:"required"`
+	Id string `query:"id" validate:"required,uuid"`
 }

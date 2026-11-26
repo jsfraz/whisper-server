@@ -1,9 +1,9 @@
 # Runbook
 
 Operational procedures for the production VPS. The deployment is a Docker
-Compose project in `$PROJECT_PATH/whisper-server`; the server listens on
-`127.0.0.1:8081` and stores state in the `whisper_data` and `valkey_data`
-volumes.
+Compose project in `$PROJECT_PATH/shept-server`; the server listens on
+`127.0.0.1:8081` and stores state in the `shept_data`, `valkey_data` and
+`postgres_data` volumes.
 
 Replace `$APP_DIR` with the absolute path to the compose project.
 
@@ -12,7 +12,7 @@ Replace `$APP_DIR` with the absolute path to the compose project.
 ```bash
 curl -fsS http://127.0.0.1:8081/health   # {"status":"ok"}
 docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env.prod" ps
-docker inspect -f '{{.State.Health.Status}}' whisper-server
+docker inspect -f '{{.State.Health.Status}}' shept-server
 ```
 
 A deploy counts as successful only when the container reports `healthy`.
@@ -21,16 +21,16 @@ A deploy counts as successful only when the container reports `healthy`.
 
 ```bash
 cd "$APP_DIR"
-docker compose -f docker-compose.prod.yml --env-file .env.prod restart whisper-server
+docker compose -f docker-compose.prod.yml --env-file .env.prod restart shept-server
 ```
 
-A restart keeps SQLite, Valkey and media on disk. If the process keeps
-crash-looping, check `docker compose logs --tail=200 whisper-server`; most
+A restart keeps PostgreSQL, Valkey and media on disk. If the process keeps
+crash-looping, check `docker compose logs --tail=200 shept-server`; most
 startup failures are a missing `data/firebase.json` or a bad `.env.prod`.
 
 ## Rollback
 
-Automatic: the deploy workflow writes the active tag to `.whisper-image-tag`.
+Automatic: the deploy workflow writes the active tag to `.shept-image-tag`.
 If the new container does not become healthy, it redeploys the previous tag and
 the workflow still fails (so an issue is opened and the failure is visible).
 
@@ -42,7 +42,7 @@ Manual, to a known good tag:
 
    ```bash
    cd "$APP_DIR"
-   WHISPER_IMAGE_TAG=v1.2.2 docker compose -f docker-compose.prod.yml \
+   SHEPT_IMAGE_TAG=v1.2.2 docker compose -f docker-compose.prod.yml \
      --env-file .env.prod up -d
    ```
 
@@ -54,7 +54,7 @@ the current schema; if it does not, restore the database backup instead.
 
 ```bash
 docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env.prod" \
-  logs -f --tail=200 whisper-server
+  logs -f --tail=200 shept-server
 ```
 
 Logs are JSON in `GIN_MODE=release`. Every request line has `request_id`
@@ -74,22 +74,64 @@ Rotate one secret at a time, update the GitHub secret, redeploy, and verify
 | `VALKEY_PASSWORD` | Update `.env.prod` and restart both services. Data survives; no re-encryption. |
 | `SMTP_PASSWORD` | Invite e-mails fail until fixed; no impact on existing users. |
 | `FIREBASE_JSON_BASE64` | Push notifications fail until fixed; messages, media and WS delivery keep working. |
-| `SQLITE_PASSWORD` | **Do not rotate by editing `.env.prod`.** The database is encrypted with this key. Rekeying requires an offline backup and `PRAGMA rekey`, then a new secret. |
+| `POSTGRES_PASSWORD` | Rotate with `ALTER USER shept WITH PASSWORD` inside the container, then update `.env.prod`. The server reads it from `DATABASE_URL`, so both have to match. |
+
+## Host kernel: vm.overcommit_memory
+
+Valkey needs `vm.overcommit_memory=1`; with the default `0` a background save
+(or replication) can fail under low memory. The setting is global to the
+kernel and is **not** namespaced, so Docker cannot set it with `sysctls:`.
+Both compose files therefore ship a one-shot `shept-valkey-sysctl` service:
+it bind-mounts the single host file `/proc/sys/vm/overcommit_memory` and writes
+`1` into it (`docker compose up` runs it again on every deploy). It needs no
+privileged mode and no extra capabilities, and it prints a warning instead of
+failing when the host does not expose the file.
+
+Verify:
+
+```bash
+cat /proc/sys/vm/overcommit_memory   # 1
+docker compose -f "$APP_DIR/docker-compose.prod.yml" --env-file "$APP_DIR/.env.prod" logs shept-valkey-sysctl
+```
+
+If the write is refused (rootless Docker, Windows/macOS host), set it on the
+host once and make it persistent:
+
+```bash
+echo 'vm.overcommit_memory = 1' | sudo tee /etc/sysctl.d/99-valkey.conf
+sudo sysctl --system
+```
+
+## Media files outlive their TTL?
+
+Media metadata lives in Valkey with a TTL; the file on disk is deleted by the
+pub/sub listener `SubscribeExpiredMedia`, which only fires while the server is
+running and subscribed. A periodic sweep (every 10 minutes, and once at
+startup) reconciles disk against Valkey: a file whose `media:<id>` key is gone
+is removed, and abandoned `*.part` uploads older than an hour are removed. A
+sweep that finds files to delete logs `removed orphaned media files`.
 
 ## Database backup
 
-Stop the server before copying the SQLite file so the backup is consistent:
+The `postgres_data` volume is the only copy of the accounts and the ciphertext
+archive. Dump it with `pg_dump` while the server runs; no downtime needed:
 
 ```bash
 cd "$APP_DIR"
-docker compose -f docker-compose.prod.yml --env-file .env.prod stop whisper-server
-docker run --rm -v whisper_whisper_data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/whisper-data.tgz -C /data .
-docker compose -f docker-compose.prod.yml --env-file .env.prod start whisper-server
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T shept-postgres \
+  pg_dump -U shept shept | gzip > "shept-$(date +%F).sql.gz"
 ```
 
-Confirm the volume name with `docker volume ls`; Compose prefixes project
-volumes with the project name from `docker-compose.prod.yml` (`whisper`).
+Restore into an empty database:
+
+```bash
+gunzip -c shept-2026-01-01.sql.gz | \
+  docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T shept-postgres \
+  psql -U shept shept
+```
+
+The archive retention sweeper runs hourly and deletes rows past `expires_at`, so
+an old dump is a view of the retention window, not of all history.
 
 ## Deploy failed
 
@@ -101,7 +143,7 @@ volumes with the project name from `docker-compose.prod.yml` (`whisper`).
 
 ## First deploy of a new image
 
-The `ghcr.io/jsfraz/whisper-server` package must be public, otherwise the VPS
+The `ghcr.io/jsfraz/shept-server` package must be public, otherwise the VPS
 cannot pull it without a registry login. After the first Release, verify the
 package visibility in GitHub -> Packages. If it has to stay private, add a
 registry login to the deploy script and a `GHCR_TOKEN` secret first.

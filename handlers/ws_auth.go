@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +17,10 @@ import (
 //	@return error
 func WebSocketAuth(c *gin.Context) (*models.WsAuthResponse, error) {
 	userId, _ := c.Get("userId")
+	deviceId, _ := c.Get("deviceId")
 	// Generate access token
 	tokenId := uuid.New().String()
-	accessToken, err := utils.GenerateToken(userId.(uint64), utils.GetSingleton().Config.WsAccessTokenLifespan, utils.GetSingleton().Config.WsAccessTokenSecret, &tokenId)
+	accessToken, err := utils.GenerateToken(userId.(string), deviceId.(string), utils.GetSingleton().Config.WsAccessTokenLifespan, utils.GetSingleton().Config.WsAccessTokenSecret, &tokenId, utils.TokenTypeWs)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}

@@ -1,0 +1,25 @@
+package models
+
+import "time"
+
+// HistoryQuery is one page of a conversation, newest first.
+//
+//	@param peerId
+//	@param before
+//	@param limit
+type HistoryQuery struct {
+	PeerId string `query:"peerId" validate:"required,uuid" description:"The other participant of the conversation"`
+	Before string `query:"before" description:"Opaque cursor from the previous page"`
+	Limit  int    `query:"limit" description:"Page size, 1-200 (default 50)"`
+}
+
+// HistoryPage is one page of the ciphertext archive plus the peers it mentions.
+// ClearedAt is this account's whole-chat cut: everything before it was deleted
+// for this account only, so a device can drop what it still holds locally.
+type HistoryPage struct {
+	Messages   []PrivateMessage `json:"messages" validate:"required"`
+	Peers      []User           `json:"peers" validate:"required"`
+	Pins       []PinnedMessage  `json:"pins" validate:"required"`
+	NextCursor string           `json:"nextCursor"`
+	ClearedAt  *time.Time       `json:"clearedAt"`
+}
