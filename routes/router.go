@@ -71,12 +71,7 @@ func NewRouter() (*fizz.Fizz, error) {
 		infos := &openapi.Info{
 			Title:       "Shept server",
 			Description: "Secure private self-hosted end-to-end encryption messaging server.",
-			Version:     "1.0.0",
-			Contact: &openapi.Contact{
-				Name:  "Josef Ráž",
-				URL:   "https://josefraz.cz",
-				Email: "razj@josefraz.cz",
-			},
+			Version:     "0.5.0",
 		}
 		grp.GET("openapi.json", nil, fizz.OpenAPI(infos, "json"))
 	}
