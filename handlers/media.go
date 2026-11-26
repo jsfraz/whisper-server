@@ -81,6 +81,7 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	// Write under the temp suffix first; the file is renamed into place only once its
 	// metadata exists, so the media sweeper can never delete an upload in flight.
 	tmpPath := path + database.MediaUploadTempSuffix
+	//nolint:gosec // path is built from a server-generated media id
 	dst, err := os.Create(tmpPath)
 	if err != nil {
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
@@ -88,30 +89,30 @@ func uploadMediaFromInput(c *gin.Context, request *models.UploadMediaInput) (*mo
 	// LimitReader is the real cap: the declared size is not trusted.
 	written, err := io.Copy(dst, io.LimitReader(src, maxUpload+1))
 	if err != nil {
-		dst.Close()
-		os.Remove(tmpPath)
+		_ = dst.Close()
+		_ = os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if written > maxUpload {
-		dst.Close()
-		os.Remove(tmpPath)
+		_ = dst.Close()
+		_ = os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusRequestEntityTooLarge, errors.New(utils.ErrorMediaFileTooLarge))
 	}
 	if err := dst.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
 	// Store metadata in Valkey with TTL
 	meta := models.NewMediaMetadata(id, sender, request.ReceiverId, written)
 	if err := database.StoreMediaMetadata(meta, utils.GetSingleton().Config.MediaTtl); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		database.DeleteMedia(id)
+		_ = os.Remove(tmpPath)
+		_ = database.DeleteMedia(id)
 		return nil, c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
@@ -210,19 +211,20 @@ func CreateMediaUpload(c *gin.Context, request *models.MediaUploadSessionInput) 
 	}
 	// Create the partial file up front, so an early chunk never has to decide
 	// whether the file or the session is missing.
+	//nolint:gosec // path is built from a server-generated media id
 	partial, err := os.Create(path + database.MediaUploadTempSuffix)
 	if err != nil {
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	if err := partial.Close(); err != nil {
-		os.Remove(path + database.MediaUploadTempSuffix)
+		_ = os.Remove(path + database.MediaUploadTempSuffix)
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 
 	session := models.NewMediaUploadSession(id, sender, request.ReceiverId, request.TotalSize)
 	ttl := utils.GetSingleton().Config.MediaUploadTtl
 	if err := database.StoreMediaUploadSession(session, ttl); err != nil {
-		os.Remove(path + database.MediaUploadTempSuffix)
+		_ = os.Remove(path + database.MediaUploadTempSuffix)
 		return c.AbortWithError(http.StatusInternalServerError, err)
 	}
 	// Indexed like a finished file, so the quota counts it and account deletion
