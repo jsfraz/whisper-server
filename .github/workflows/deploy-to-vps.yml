@@ -53,7 +53,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            ACTUAL_PATH="$PROJECT_PATH/whisper-server"
+            ACTUAL_PATH="$PROJECT_PATH/shept-server"
             if [ -d "$ACTUAL_PATH/.git" ]; then
               cd "$ACTUAL_PATH"
               git fetch --tags --prune origin
@@ -61,7 +61,7 @@ jobs:
               mkdir -p "$ACTUAL_PATH"
               cd "$ACTUAL_PATH"
               git init
-              git remote add origin https://github.com/jsfraz/whisper-server.git
+              git remote add origin https://github.com/jsfraz/shept-server.git
               git fetch --tags origin
             fi
             # Use the compose file from the tag being deployed.
@@ -82,15 +82,15 @@ jobs:
             } > .env.prod
             printf '%s' "$FIREBASE_JSON_BASE64" | base64 --decode > data/firebase.json
 
-            PREVIOUS_TAG="$(cat .whisper-image-tag 2>/dev/null || true)"
+            PREVIOUS_TAG="$(cat .shept-image-tag 2>/dev/null || true)"
 
             deploy() {
-              export WHISPER_IMAGE_TAG="$1"
-              echo "Deploying $WHISPER_IMAGE_TAG"
-              docker compose -f docker-compose.prod.yml --env-file .env.prod pull whisper-server
+              export SHEPT_IMAGE_TAG="$1"
+              echo "Deploying $SHEPT_IMAGE_TAG"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod pull shept-server
               docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
               for _ in $(seq 1 36); do
-                status="$(docker inspect -f '{{.State.Health.Status}}' whisper-server 2>/dev/null || echo starting)"
+                status="$(docker inspect -f '{{.State.Health.Status}}' shept-server 2>/dev/null || echo starting)"
                 case "$status" in
                   healthy) return 0 ;;
                   unhealthy) return 1 ;;
@@ -101,7 +101,7 @@ jobs:
             }
 
             if deploy "$IMAGE_TAG"; then
-              printf '%s\n' "$IMAGE_TAG" > .whisper-image-tag
+              printf '%s\n' "$IMAGE_TAG" > .shept-image-tag
             else
               echo "Deploy of $IMAGE_TAG failed"
               if [ -n "$PREVIOUS_TAG" ]; then

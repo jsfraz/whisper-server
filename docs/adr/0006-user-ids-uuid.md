@@ -21,8 +21,8 @@ invite. Queued Valkey state keyed by numeric ids (`msg:*`, `fcm:*`,
 `del:users`) is left to expire, except the delete-list set, whose non-UUID
 members are ignored.
 
-Client consequences: `whisper_openapi_client_dart` is regenerated (ids are
-`String`), `whisper_websocket_client_dart` models change type, and the Flutter
+Client consequences: `shept_openapi_client_dart` is regenerated (ids are
+`String`), `shept_websocket_client_dart` models change type, and the Flutter
 app's Hive models store the id as a string. Local app data written before this
 change cannot be read by the new adapters, so existing installs must log out
 (delete local cache) and register again with a fresh invite.

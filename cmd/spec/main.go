@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"jsfraz/whisper-server/routes"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/routes"
+	"jsfraz/shept-server/utils"
 	"net/http/httptest"
 	"os"
 )

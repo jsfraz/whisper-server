@@ -2,7 +2,7 @@ package database
 
 import (
 	"embed"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 	"log"
 
 	"github.com/pressly/goose/v3"

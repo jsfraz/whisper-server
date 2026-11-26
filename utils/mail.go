@@ -44,5 +44,5 @@ func SendMail(to string, subject, content string) error {
 //
 //	@return string
 func GetMailFooter() string {
-	return fmt.Sprintf("Whisper %s", time.Now().Format("2.1. 2006 15:04:05"))
+	return fmt.Sprintf("Shept %s", time.Now().Format("2.1. 2006 15:04:05"))
 }

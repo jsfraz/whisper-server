@@ -1,24 +1,24 @@
-name: whisper-dev
+name: shept-dev
 
 services:
 
-  # whisper-server:
-  #   container_name: whisper-server-dev
+  # shept-server:
+  #   container_name: shept-server-dev
   #   # restart: always
   #   build: .
-  #   image: whisper-server
+  #   image: shept-server
   #   ports:
   #      - "8080:8080"
   #   volumes:
   #      - /etc/localtime:/etc/localtime:ro
   #      - ./data:/app/data
   #   depends_on:
-  #     - whisper-valkey
+  #     - shept-valkey
   #   environment:
   #    - GIN_MODE=debug
   #    - SERVER_URL=${SERVER_URL}
-  #    - DATABASE_URL=postgres://whisper:${POSTGRES_PASSWORD}@127.0.0.1:5432/whisper?sslmode=disable
-  #    - VALKEY_HOST=whisper-valkey-dev
+  #    - DATABASE_URL=postgres://shept:${POSTGRES_PASSWORD}@127.0.0.1:5432/shept?sslmode=disable
+  #    - VALKEY_HOST=shept-valkey-dev
   #    - VALKEY_PASSWORD=${VALKEY_PASSWORD}
   #    - ADMIN_MAIL=${ADMIN_MAIL}
   #    - SMTP_USER=${SMTP_USER}
@@ -32,9 +32,9 @@ services:
   # replication) can fail under low memory. The setting is global to the kernel, not
   # namespaced, so `sysctls:` cannot set it; this one-shot binds the host file and writes
   # it without privileged mode. See docs/runbook.md if the host does not expose /proc/sys.
-  whisper-valkey-sysctl:
+  shept-valkey-sysctl:
     image: valkey/valkey:9-alpine
-    container_name: whisper-valkey-sysctl-dev
+    container_name: shept-valkey-sysctl-dev
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command: ["echo 1 > /mnt/overcommit_memory && echo 'vm.overcommit_memory=1' || echo 'WARNING: could not set vm.overcommit_memory, set it on the host, see docs/runbook.md'"]
@@ -44,12 +44,12 @@ services:
 
   # Users, devices and the ciphertext archive. SQLite was only ever meant to
   # hold accounts; history outgrew it.
-  whisper-postgres:
+  shept-postgres:
     image: postgres:17-alpine
-    container_name: whisper-postgres-dev
+    container_name: shept-postgres-dev
     environment:
-      - POSTGRES_DB=whisper
-      - POSTGRES_USER=whisper
+      - POSTGRES_DB=shept
+      - POSTGRES_USER=shept
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     # The server runs on the host during development (go run .), so the port is
     # published on loopback only.
@@ -58,14 +58,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U whisper -d whisper"]
+      test: ["CMD-SHELL", "pg_isready -U shept -d shept"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  whisper-valkey:
+  shept-valkey:
     image: valkey/valkey:9-alpine
-    container_name: whisper-valkey-dev
+    container_name: shept-valkey-dev
     # restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning --notify-keyspace-events Ex"
     # The server runs on the host during development (go run .), so the port is

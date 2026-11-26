@@ -3,10 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/push"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/push"
+	"jsfraz/shept-server/utils"
 	"log/slog"
 
 	"github.com/go-playground/validator/v10"

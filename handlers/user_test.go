@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"jsfraz/whisper-server/models"
+	"jsfraz/shept-server/models"
 	"net/http"
 	"net/http/httptest"
 	"testing"

@@ -1,4 +1,4 @@
-module jsfraz/whisper-server
+module jsfraz/shept-server
 
 go 1.27.4
 

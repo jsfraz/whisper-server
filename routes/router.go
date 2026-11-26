@@ -2,9 +2,9 @@ package routes
 
 import (
 	"fmt"
-	"jsfraz/whisper-server/handlers"
-	"jsfraz/whisper-server/middlewares"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/handlers"
+	"jsfraz/shept-server/middlewares"
+	"jsfraz/shept-server/utils"
 	"net/http"
 
 	"github.com/gin-contrib/cors"
@@ -69,7 +69,7 @@ func NewRouter() (*fizz.Fizz, error) {
 			},
 		})
 		infos := &openapi.Info{
-			Title:       "Whisper server",
+			Title:       "Shept server",
 			Description: "Secure private self-hosted end-to-end encryption messaging server.",
 			Version:     "1.0.0",
 			Contact: &openapi.Contact{

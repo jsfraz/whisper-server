@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"jsfraz/whisper-server/models"
+	"jsfraz/shept-server/models"
 
 	"github.com/gorilla/websocket"
 )

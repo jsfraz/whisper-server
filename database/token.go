@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 
 	"github.com/valkey-io/valkey-go"
 )

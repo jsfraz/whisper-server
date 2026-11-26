@@ -6,7 +6,7 @@ import (
 )
 
 // Version of this server build. Overridden at build time with
-// -ldflags "-X jsfraz/whisper-server/utils.Version=<tag>".
+// -ldflags "-X jsfraz/shept-server/utils.Version=<tag>".
 var Version = "0.1.0"
 
 // ApiVersion is bumped when the contract changes in a way a client must notice.

@@ -10,10 +10,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/routes"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/routes"
+	"jsfraz/shept-server/utils"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -71,7 +71,7 @@ func TestE2E(t *testing.T) {
 		if status := e.doJSON(t, http.MethodGet, "/api/version", nil, "", &version); status != http.StatusOK {
 			t.Fatalf("version status: %d", status)
 		}
-		if version.Name != "whisper-server" || version.Version == "" || version.MinClientVersion == "" {
+		if version.Name != "shept-server" || version.Version == "" || version.MinClientVersion == "" {
 			t.Fatalf("unexpected version: %+v", version)
 		}
 	})
@@ -1315,8 +1315,8 @@ func startEnv(t *testing.T) *env {
 
 	// The archive lives in PostgreSQL; the suite runs against a throwaway one.
 	pg, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("whisper"),
-		postgres.WithUsername("whisper"),
+		postgres.WithDatabase("shept"),
+		postgres.WithUsername("shept"),
 		postgres.WithPassword(randomSecret(t)),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").

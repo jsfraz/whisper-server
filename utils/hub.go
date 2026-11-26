@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"jsfraz/whisper-server/models"
+	"jsfraz/shept-server/models"
 	"sync"
 )
 

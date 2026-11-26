@@ -1,7 +1,7 @@
 package middlewares
 
 import (
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 	"net/http"
 	"net/http/httptest"
 	"strings"

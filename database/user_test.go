@@ -1,7 +1,7 @@
 package database
 
 import (
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 	"testing"
 )
 

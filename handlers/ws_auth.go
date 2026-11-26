@@ -1,9 +1,9 @@
 package handlers
 
 import (
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

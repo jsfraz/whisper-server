@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"jsfraz/whisper-server/handlers"
-	"jsfraz/whisper-server/middlewares"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/handlers"
+	"jsfraz/shept-server/middlewares"
+	"jsfraz/shept-server/utils"
 	"net/http"
 
 	"github.com/loopfz/gadgeto/tonic"

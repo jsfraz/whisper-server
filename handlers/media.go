@@ -3,9 +3,9 @@ package handlers
 import (
 	"errors"
 	"io"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
 	"log/slog"
 	"net/http"
 	"os"

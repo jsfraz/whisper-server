@@ -4,9 +4,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/routes"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/routes"
+	"jsfraz/shept-server/utils"
 	"log"
 	"net/http"
 	"os"
@@ -27,7 +27,7 @@ var registerInviteTemplate string
 
 func main() {
 	// Log settings
-	log.SetPrefix("whisper: ")
+	log.SetPrefix("shept: ")
 	log.SetFlags(log.LstdFlags | log.LUTC | log.Lmicroseconds)
 
 	log.Printf("starting on %s...", addr)

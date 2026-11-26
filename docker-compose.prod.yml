@@ -1,26 +1,26 @@
-name: whisper
+name: shept
 
 services:
 
-  whisper-server:
-    container_name: whisper-server
-    image: ghcr.io/jsfraz/whisper-server:${WHISPER_IMAGE_TAG:?WHISPER_IMAGE_TAG is required}
+  shept-server:
+    container_name: shept-server
+    image: ghcr.io/jsfraz/shept-server:${SHEPT_IMAGE_TAG:?SHEPT_IMAGE_TAG is required}
     pull_policy: always
     restart: always
     ports:
        - "127.0.0.1:8081:8080"
     volumes:
        - /etc/localtime:/etc/localtime:ro
-       - whisper_data:/app/data
+       - shept_data:/app/data
        - ./data/firebase.json:/app/data/firebase.json
     depends_on:
-      - whisper-valkey
-      - whisper-postgres
+      - shept-valkey
+      - shept-postgres
     environment:
       - GIN_MODE=release
       - SERVER_URL=${SERVER_URL}
-      - DATABASE_URL=postgres://whisper:${POSTGRES_PASSWORD}@whisper-postgres:5432/whisper?sslmode=disable
-      - VALKEY_HOST=whisper-valkey
+      - DATABASE_URL=postgres://shept:${POSTGRES_PASSWORD}@shept-postgres:5432/shept?sslmode=disable
+      - VALKEY_HOST=shept-valkey
       - VALKEY_PASSWORD=${VALKEY_PASSWORD}
       - ADMIN_MAIL=${ADMIN_MAIL}
       - SMTP_USER=${SMTP_USER}
@@ -33,9 +33,9 @@ services:
   # Valkey needs vm.overcommit_memory=1 on the host (background saves fail under low
   # memory otherwise). It is a kernel-wide setting, not namespaced, so it cannot be set
   # with `sysctls:`; this one-shot writes the host file without privileged mode.
-  whisper-valkey-sysctl:
+  shept-valkey-sysctl:
     image: valkey/valkey:9-alpine
-    container_name: whisper-valkey-sysctl
+    container_name: shept-valkey-sysctl
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command: ["echo 1 > /mnt/overcommit_memory && echo 'vm.overcommit_memory=1' || echo 'WARNING: could not set vm.overcommit_memory, set it on the host, see docs/runbook.md'"]
@@ -45,25 +45,25 @@ services:
 
   # Accounts, devices and the ciphertext archive. The volume is the only copy:
   # back it up with pg_dump (see docs/runbook.md).
-  whisper-postgres:
+  shept-postgres:
     image: postgres:17-alpine
-    container_name: whisper-postgres
+    container_name: shept-postgres
     restart: always
     environment:
-      - POSTGRES_DB=whisper
-      - POSTGRES_USER=whisper
+      - POSTGRES_DB=shept
+      - POSTGRES_USER=shept
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U whisper -d whisper"]
+      test: ["CMD-SHELL", "pg_isready -U shept -d shept"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  whisper-valkey:
+  shept-valkey:
     image: valkey/valkey:9-alpine
-    container_name: whisper-valkey
+    container_name: shept-valkey
     restart: always
     command: /bin/sh -c "redis-server --requirepass ${VALKEY_PASSWORD} --save 60 1 --loglevel warning --notify-keyspace-events Ex"
     volumes:
@@ -72,4 +72,4 @@ services:
 volumes:
   valkey_data:
   postgres_data:
-  whisper_data:
+  shept_data:

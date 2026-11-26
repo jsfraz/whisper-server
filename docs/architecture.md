@@ -1,6 +1,6 @@
 # Architecture
 
-Whisper is four repositories with one runtime system. The app and both Dart
+Shept is four repositories with one runtime system. The app and both Dart
 clients live on the device; the Go server is the only component that talks to
 PostgreSQL, Valkey and Firebase.
 
@@ -8,11 +8,11 @@ PostgreSQL, Valkey and Firebase.
 
 ```mermaid
 C4Context
-  title Whisper - system context
+  title Shept - system context
 
-  Person(user, "User", "Runs the Whisper app on a phone or Linux desktop")
-  System(app, "Whisper app", "Flutter client; owns keys and plaintext")
-  System(server, "Whisper server", "Go/Gin; routes, auth, WebSocket, media")
+  Person(user, "User", "Runs the Shept app on a phone or Linux desktop")
+  System(app, "Shept app", "Flutter client; owns keys and plaintext")
+  System(server, "Shept server", "Go/Gin; routes, auth, WebSocket, media")
   SystemDb(postgres, "PostgreSQL", "Accounts, devices, ciphertext archive")
   System(valkey, "Valkey", "Invites, sessions, media metadata, WS tokens, push tokens")
   System_Ext(fcm, "Firebase Cloud Messaging", "Push notifications")
@@ -28,11 +28,11 @@ C4Context
 
 ```mermaid
 C4Container
-  title Whisper - containers
+  title Shept - containers
 
   Person(user, "User", "")
 
-  Container(app, "Whisper app", "Flutter 3.47 / Dart 3.13", "UI, RSA auth, AES-GCM encryption, Hive cache")
+  Container(app, "Shept app", "Flutter 3.47 / Dart 3.13", "UI, RSA auth, AES-GCM encryption, Hive cache")
   Container(openapi, "OpenAPI client", "Generated Dart", "HTTP contract generated from the server spec")
   Container(wsclient, "WebSocket client", "Dart", "Typed WS messages and one-time token handshake")
 
@@ -76,7 +76,7 @@ every token carries the device id, so the lockout starts on the next request.
 - Clients talk HTTP/WS only. They never know about PostgreSQL, Valkey or the DB
   schema; the OpenAPI spec is the contract.
 - The app never edits generated client code; contract changes go through
-  `whisper-server` and `scripts/regen.sh`.
+  `shept-server` and `scripts/regen.sh`.
 
 These rules are documented, not enforced by a linter: the handler rule is about
 behaviour (not importing a package) and a `depguard` gate would not catch it.

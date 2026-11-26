@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 	"strings"
 )
 

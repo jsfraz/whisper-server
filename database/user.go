@@ -2,8 +2,8 @@ package database
 
 import (
 	"context"
-	"jsfraz/whisper-server/models"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/models"
+	"jsfraz/shept-server/utils"
 	"strings"
 	"sync"
 	"time"

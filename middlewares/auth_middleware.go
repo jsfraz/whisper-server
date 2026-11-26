@@ -2,8 +2,8 @@ package middlewares
 
 import (
 	"errors"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

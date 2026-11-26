@@ -3,8 +3,8 @@ package push
 import (
 	"context"
 	"errors"
-	"jsfraz/whisper-server/database"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/database"
+	"jsfraz/shept-server/utils"
 
 	messaging "firebase.google.com/go/v4/messaging"
 )

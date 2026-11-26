@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"jsfraz/whisper-server/models"
+	"jsfraz/shept-server/models"
 )
 
 // TestSendNeverBlocks is the property that keeps one stuck client from stopping

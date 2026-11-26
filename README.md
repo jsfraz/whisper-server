@@ -1,10 +1,10 @@
-# whisper-server
+# shept-server
 
 Secure private self-hosted messaging server using end-to-end encryption.
 
-For Whisper app, see [whisper](https://github.com/jsfraz/whisper) repository.
+For Shept app, see [shept](https://github.com/jsfraz/shept) repository.
 
-Also see [Wiki](https://github.com/jsfraz/whisper-server/wiki)!
+Also see [Wiki](https://github.com/jsfraz/shept-server/wiki)!
 
 ## Architecture and operations
 
@@ -21,7 +21,7 @@ Developed with [OpenCode](https://opencode.ai); MCP servers live in the global c
 - `golang` (`gopls mcp`) — Go diagnostics, symbol resolution, tests
 - `context7` — library documentation lookup
 - `dart` — only relevant when working on the Dart clients in the sibling repositories
-  (see the `whisper` app README for the full setup)
+  (see the `shept` app README for the full setup)
 
 ## Development
 
@@ -129,4 +129,4 @@ To get `FIREBASE_JSON_BASE64`, run:
 
 ### Reverse proxy
 
-For deploying behind a reverse proxy see [nginx configuration](whisper.conf).
+For deploying behind a reverse proxy see [nginx configuration](shept.conf).

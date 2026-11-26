@@ -2,7 +2,7 @@ package database
 
 import (
 	"fmt"
-	"jsfraz/whisper-server/utils"
+	"jsfraz/shept-server/utils"
 	"log"
 
 	"github.com/valkey-io/valkey-go"

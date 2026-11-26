@@ -1,7 +1,7 @@
-# whisper-server — agent contract
+# shept-server — agent contract
 
-Go 1.27 / Gin API for the Whisper messenger: PostgreSQL (GORM), Valkey, WebSocket, Firebase push.
-Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `openapi.json`), `whisper_websocket_client_dart`.
+Go 1.27 / Gin API for the Shept messenger: PostgreSQL (GORM), Valkey, WebSocket, Firebase push.
+Clients: `shept` (Flutter), `shept_openapi_client_dart` (generated from `openapi.json`), `shept_websocket_client_dart`.
 
 ## Commands
 
@@ -21,7 +21,7 @@ Clients: `whisper` (Flutter), `whisper_openapi_client_dart` (generated from `ope
 
 1. Never commit secrets, keys, `.env*` or Firebase credentials.
 2. `openapi.json` is a versioned artifact. Do not generate it with `wget` against a running server — only `go run ./cmd/spec`, so the output stays deterministic.
-3. Never edit `whisper_openapi_client_dart/lib` by hand. A contract change means: change the spec here, regenerate the client, bump the version in `whisper/pubspec.yaml`, all in one sequence.
+3. Never edit `shept_openapi_client_dart/lib` by hand. A contract change means: change the spec here, regenerate the client, bump the version in `shept/pubspec.yaml`, all in one sequence.
 4. Do not weaken auth or encryption, not even "temporarily for debugging" (CORS, `CheckOrigin`, token validation).
 5. Do not add a dependency without justification in the PR.
 6. Do not change the DB schema without a migration (goose, in `database/migrations/`) and do not change a Valkey payload without the `v` field.
