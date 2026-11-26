@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -305,14 +306,17 @@ func UploadMediaChunk(c *gin.Context) {
 		return
 	}
 
-	path, err := database.MediaFilePath(id)
+	// Parse to a canonical UUID before the value becomes a path, so what is
+	// opened on disk can only ever be a plain id.
+	mediaID, err := uuid.Parse(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": utils.ErrorInvalidMediaId})
 		return
 	}
+	path := filepath.Join(utils.GetSingleton().Config.MediaDir, mediaID.String())
 	// Open without O_APPEND: the offset is the authority, and the lock above
 	// keeps two writers apart.
-	dst, err := os.OpenFile(path+database.MediaUploadTempSuffix, os.O_WRONLY, 0) //nolint:gosec // path from MediaFilePath, which only accepts a UUID
+	dst, err := os.OpenFile(path+database.MediaUploadTempSuffix, os.O_WRONLY, 0) //nolint:gosec // path from a parsed UUID
 	if err != nil {
 		// The session outlived its bytes (swept or removed): the client restarts.
 		_ = database.DeleteMediaUploadSession(id)
@@ -483,10 +487,10 @@ func DownloadMedia(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=\""+id+"\"")
 	c.Header("Content-Length", strconv.FormatInt(info.Size(), 10))
 	if _, err := io.Copy(c.Writer, file); err != nil {
-		slog.Warn("media download aborted", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
+		slog.Warn("media download aborted", "media_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
 	}
 	if err := file.Close(); err != nil {
-		slog.Warn("failed to close media file", "media_id", id, "error", utils.SanitizeLogValue(err.Error()))
+		slog.Warn("failed to close media file", "media_id", utils.SanitizeLogValue(id), "error", utils.SanitizeLogValue(err.Error()))
 	}
 }
 
